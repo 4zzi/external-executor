@@ -16,7 +16,7 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="WebSocketSharp" Version="1.0.3-rc11" />
     <PackageReference Include="xxHashSharp" Version="1.0.0" />
-    <PackageReference Include="ZstdNet" Version="1.0.3" />
+    <PackageReference Include="ZstdNet" Version="1.2.0" />
   </ItemGroup>
 
 </Project>

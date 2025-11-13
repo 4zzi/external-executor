@@ -293,7 +293,7 @@
       "K4os.Hash.xxHash >= 1.0.8",
       "Newtonsoft.Json >= 13.0.4",
       "WebSocketSharp >= 1.0.3-rc11",
-      "ZstdNet >= 1.0.3",
+      "ZstdNet >= 1.2.0",
       "xxHashSharp >= 1.0.0"
     ]
   },
@@ -368,7 +368,7 @@
           },
           "ZstdNet": {
             "target": "Package",
-            "version": "[1.0.3, )"
+            "version": "[1.2.0, )"
           },
           "xxHashSharp": {
             "target": "Package",
@@ -396,16 +396,6 @@
     }
   },
   "logs": [
-    {
-      "code": "NU1603",
-      "level": "Warning",
-      "warningLevel": 1,
-      "message": "labubu depends on ZstdNet (>= 1.0.3) but ZstdNet 1.0.3 was not found. ZstdNet 1.2.0 was resolved instead.",
-      "libraryId": "ZstdNet",
-      "targetGraphs": [
-        "net8.0"
-      ]
-    },
     {
       "code": "NU1701",
       "level": "Warning",

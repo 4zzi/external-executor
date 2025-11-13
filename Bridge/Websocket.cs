@@ -5,6 +5,11 @@ using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using WebSocketSharp;
 using WebSocketSharp.Server;
+using Functions;
+using System.Text;
+using Client;
+using Main;
+using RMemory;
 
 namespace Bridge
 {
@@ -122,6 +127,7 @@ namespace Bridge
             lock (_connectionLock)
             {
                 _connections[pid] = behavior;
+                Console.WriteLine($"[*] WebSocket connection established for PID {pid}");
             }
         }
 
@@ -156,15 +162,391 @@ namespace Bridge
 
         private void SetupListeners()
         {
-            AddListener("print", (behavior, data) =>
+            AddListener("initialize", (behavior, data) =>
             {
                 int pid = data.ContainsKey("pid") ? data["pid"].Value<int>() : 0;
-                string message = data.ContainsKey("message") ? data["message"].ToString() : "";
-                if (!string.IsNullOrEmpty(message))
-                    Console.WriteLine($"[PID {pid}] {message}");
+                Console.WriteLine($"[*] Client {pid} initialized and connected via WebSocket");
+                
+                lock (_connectionLock)
+                {
+                    _connections[pid] = behavior;
+                }
+                
+                // Set ping interval (WebSocketSharp doesn't have direct ping interval method)
+                // You might need to implement this separately if needed
             });
 
-            // Other listeners like loadstring, unlock_module can be added here similarly
+            AddListener("is_compilable", (behavior, data) =>
+            {
+                string id = data.ContainsKey("id") ? data["id"].ToString() : "";
+                int pid = data.ContainsKey("pid") ? data["pid"].Value<int>() : 0;
+
+                JObject response = new JObject
+                {
+                    ["type"] = "response",
+                    ["success"] = false,
+                    ["pid"] = pid
+                };
+
+                if (!string.IsNullOrEmpty(id))
+                    response["id"] = id;
+
+                try
+                {
+                    if (!data.ContainsKey("source"))
+                        throw new Exception("Missing required key: source");
+
+                    string source = data["source"].ToString();
+                    byte[] sourceBytes = Convert.FromBase64String(source);
+                    string decodedSource = Encoding.UTF8.GetString(sourceBytes);
+
+                    // Try to compile to check if it's valid
+                    string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.lua");
+                    File.WriteAllText(tempFile, decodedSource);
+                    
+                    try
+                    {
+                        Executor.Compile(tempFile);
+                        response["success"] = true;
+                    }
+                    finally
+                    {
+                        if (File.Exists(tempFile))
+                            File.Delete(tempFile);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    response["message"] = ex.Message;
+                }
+
+                behavior.SendJson(response);
+            });
+
+            AddListener("request", (behavior, data) =>
+            {
+                string id = data.ContainsKey("id") ? data["id"].ToString() : "";
+                int pid = data.ContainsKey("pid") ? data["pid"].Value<int>() : 0;
+
+                JObject response = new JObject
+                {
+                    ["type"] = "response",
+                    ["success"] = false,
+                    ["pid"] = pid
+                };
+
+                if (!string.IsNullOrEmpty(id))
+                    response["id"] = id;
+
+                try
+                {
+                    if (!data.ContainsKey("url") || !data.ContainsKey("method"))
+                        throw new Exception("Missing required keys: url, method");
+
+                    string url = data["url"].ToString();
+                    string method = data["method"].ToString().ToUpper();
+                    JObject headers = data.ContainsKey("headers") ? data["headers"] as JObject : new JObject();
+                    string body = data.ContainsKey("body") ? data["body"].ToString() : "";
+
+                    // Validate URL
+                    string urlPattern = @"^(https?:\/\/(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}|https?:\/\/(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)){3})(:\d{1,5})?(\/[^\s]*)?$";
+                    if (!Regex.IsMatch(url, urlPattern, RegexOptions.IgnoreCase))
+                        throw new Exception("Invalid URL");
+
+                    // Make HTTP request
+                    using (var client = new HttpClient())
+                    {
+                        client.Timeout = TimeSpan.FromSeconds(30);
+
+                        var requestMessage = new HttpRequestMessage();
+                        requestMessage.RequestUri = new Uri(url);
+
+                        // Add headers
+                        foreach (var header in headers)
+                        {
+                            try
+                            {
+                                client.DefaultRequestHeaders.Add(header.Key, header.Value.ToString());
+                            }
+                            catch { }
+                        }
+
+                        // Set method and body
+                        switch (method)
+                        {
+                            case "GET":
+                                requestMessage.Method = HttpMethod.Get;
+                                break;
+                            case "POST":
+                                requestMessage.Method = HttpMethod.Post;
+                                requestMessage.Content = new StringContent(body, Encoding.UTF8, "application/json");
+                                break;
+                            case "PUT":
+                                requestMessage.Method = HttpMethod.Put;
+                                requestMessage.Content = new StringContent(body, Encoding.UTF8, "application/json");
+                                break;
+                            case "DELETE":
+                                requestMessage.Method = HttpMethod.Delete;
+                                if (!string.IsNullOrEmpty(body))
+                                    requestMessage.Content = new StringContent(body, Encoding.UTF8, "application/json");
+                                break;
+                            case "PATCH":
+                                requestMessage.Method = new HttpMethod("PATCH");
+                                requestMessage.Content = new StringContent(body, Encoding.UTF8, "application/json");
+                                break;
+                            default:
+                                throw new Exception("Unsupported HTTP method");
+                        }
+
+                        var httpResponse = client.SendAsync(requestMessage).Result;
+                        string responseBody = httpResponse.Content.ReadAsStringAsync().Result;
+
+                        JObject responseHeaders = new JObject();
+                        foreach (var header in httpResponse.Headers)
+                        {
+                            responseHeaders[header.Key] = string.Join(", ", header.Value);
+                        }
+
+                        response["response"] = new JObject
+                        {
+                            ["success"] = httpResponse.IsSuccessStatusCode,
+                            ["status_code"] = (int)httpResponse.StatusCode,
+                            ["status_message"] = httpResponse.ReasonPhrase,
+                            ["headers"] = responseHeaders,
+                            ["body"] = responseBody
+                        };
+
+                        response["success"] = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    response["message"] = ex.Message;
+                }
+
+                behavior.SendJson(response);
+            });
+
+            AddListener("loadstring", (behavior, data) =>
+            {
+                string id = data.ContainsKey("id") ? data["id"].ToString() : "";
+                int pid = data.ContainsKey("pid") ? data["pid"].Value<int>() : 0;
+
+                JObject response = new JObject
+                {
+                    ["type"] = "response",
+                    ["success"] = false,
+                    ["pid"] = pid
+                };
+
+                if (!string.IsNullOrEmpty(id))
+                    response["id"] = id;
+
+                try
+                {
+                    if (!data.ContainsKey("chunk") || !data.ContainsKey("chunk_name") || !data.ContainsKey("script_name"))
+                        throw new Exception("Missing required keys: chunk, chunk_name, script_name");
+
+                    string chunk = data["chunk"].ToString();
+                    byte[] chunkBytes = Convert.FromBase64String(chunk);
+                    string decodedChunk = Encoding.UTF8.GetString(chunkBytes);
+
+                    string chunkName = data["chunk_name"].ToString();
+                    string scriptName = data["script_name"].ToString();
+
+                    Client client = FindClientByProcessId(pid);
+                    if (client == null)
+                        throw new Exception($"Failed to find client {pid}");
+
+                    var game = Main.Roblox.Game;
+                    var robloxReplicatedStorage = game.FindFirstChildOfClass("RobloxReplicatedStorage");
+                    if (robloxReplicatedStorage == null || robloxReplicatedStorage.Self == IntPtr.Zero)
+                        throw new Exception("RobloxReplicatedStorage not found");
+
+                    var script = robloxReplicatedStorage.FindFirstChildFromPath($"Executor.Scripts.{scriptName}");
+                    if (script == null || script.Self == IntPtr.Zero)
+                        throw new Exception($"Script '{scriptName}' not found");
+
+                    // Build the loadstring wrapper
+                    string wrappedCode = $"local function {chunkName}(...)do for i,v in pairs(getfenv(debug.info(1,'f')))do getfenv(0)[i]=v;end;setmetatable(getgenv and getgenv()or{{}},{{__newindex=function(t,i,v)rawset(t,i,v)getfenv()[i]=v;getfenv(0)[i]=v;end}})end;{decodedChunk}\nend;return {chunkName}";
+
+                    // Write to temp file and compile
+                    string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.lua");
+                    File.WriteAllText(tempFile, wrappedCode);
+
+                    try
+                    {
+                        byte[] bytecode = Executor.Compile(tempFile);
+                        script.UnlockModule();
+                        Bytecodes.SetBytecode(script, bytecode);
+                        response["success"] = true;
+                    }
+                    finally
+                    {
+                        if (File.Exists(tempFile))
+                            File.Delete(tempFile);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    response["message"] = ex.Message;
+                    Console.WriteLine($"[ERROR] Loadstring failed: {ex.Message}");
+                }
+
+                behavior.SendJson(response);
+            });
+
+            AddListener("getscriptbytecode", (behavior, data) =>
+            {
+                string id = data.ContainsKey("id") ? data["id"].ToString() : "";
+                int pid = data.ContainsKey("pid") ? data["pid"].Value<int>() : 0;
+
+                JObject response = new JObject
+                {
+                    ["type"] = "response",
+                    ["success"] = false,
+                    ["pid"] = pid
+                };
+
+                if (!string.IsNullOrEmpty(id))
+                    response["id"] = id;
+
+                try
+                {
+                    if (!data.ContainsKey("pointer_name"))
+                        throw new Exception("Missing required key: pointer_name");
+
+                    string pointerName = data["pointer_name"].ToString();
+
+                    Client client = FindClientByProcessId(pid);
+                    if (client == null)
+                        throw new Exception($"Failed to find client {pid}");
+
+                    var game = Main.Roblox.Game;
+                    var robloxReplicatedStorage = game.FindFirstChildOfClass("RobloxReplicatedStorage");
+                    if (robloxReplicatedStorage == null || robloxReplicatedStorage.Self == IntPtr.Zero)
+                        throw new Exception("RobloxReplicatedStorage not found");
+
+                    var pointer = robloxReplicatedStorage.FindFirstChildFromPath($"Executor.Objects.{pointerName}");
+                    if (pointer == null || pointer.Self == IntPtr.Zero)
+                        throw new Exception($"Pointer '{pointerName}' not found");
+
+                    // Read the script from ObjectValue.Value
+                    IntPtr scriptPtr = Memory.Read<IntPtr>((ulong)pointer.Self + 0x48); // Offsets::Misc::Value
+                    if (scriptPtr == IntPtr.Zero)
+                        throw new Exception("Script pointer is null");
+
+                    var script = new RobloxInstance(scriptPtr);
+                    byte[] bytecode = script.GetBytecode();
+
+                    response["bytecode"] = Convert.ToBase64String(bytecode);
+                    response["success"] = true;
+                }
+                catch (Exception ex)
+                {
+                    response["message"] = ex.Message;
+                }
+
+                behavior.SendJson(response);
+            });
+
+            AddListener("unlock_module", (behavior, data) =>
+            {
+                string id = data.ContainsKey("id") ? data["id"].ToString() : "";
+                int pid = data.ContainsKey("pid") ? data["pid"].Value<int>() : 0;
+
+                JObject response = new JObject
+                {
+                    ["type"] = "response",
+                    ["success"] = false,
+                    ["pid"] = pid
+                };
+
+                if (!string.IsNullOrEmpty(id))
+                    response["id"] = id;
+
+                try
+                {
+                    if (!data.ContainsKey("pointer_name"))
+                        throw new Exception("Missing required key: pointer_name");
+
+                    string pointerName = data["pointer_name"].ToString();
+
+                    Client client = FindClientByProcessId(pid);
+                    if (client == null)
+                        throw new Exception($"Failed to find client {pid}");
+
+                    var game = Main.Roblox.Game;
+                    var robloxReplicatedStorage = game.FindFirstChildOfClass("RobloxReplicatedStorage");
+                    if (robloxReplicatedStorage == null || robloxReplicatedStorage.Self == IntPtr.Zero)
+                        throw new Exception("RobloxReplicatedStorage not found");
+
+                    var pointer = robloxReplicatedStorage.FindFirstChildFromPath($"Executor.Objects.{pointerName}");
+                    if (pointer == null || pointer.Self == IntPtr.Zero)
+                        throw new Exception($"Pointer '{pointerName}' not found");
+
+                    // Read the module script from ObjectValue.Value
+                    IntPtr moduleScriptPtr = Memory.Read<IntPtr>((ulong)pointer.Self + 0x48); // Offsets::Misc::Value
+                    if (moduleScriptPtr == IntPtr.Zero)
+                        throw new Exception("ModuleScript pointer is null");
+
+                    var moduleScript = new RobloxInstance(moduleScriptPtr);
+                    moduleScript.UnlockModule();
+
+                    response["success"] = true;
+                }
+                catch (Exception ex)
+                {
+                    response["message"] = ex.Message;
+                }
+
+                behavior.SendJson(response);
+            });
+
+            AddListener("print", (behavior, data) =>
+            {
+                try
+                {
+                    int pid = data.ContainsKey("pid") ? data["pid"].Value<int>() : 0;
+                    string message = data.ContainsKey("message") ? data["message"].ToString() : "";
+                    if (!string.IsNullOrEmpty(message))
+                        Console.WriteLine($"[PID {pid}] {message}");
+                }
+                catch
+                {
+                    // ignore malformed print messages
+                }
+            });
+
+            AddListener("warn", (behavior, data) =>
+            {
+                try
+                {
+                    int pid = data.ContainsKey("pid") ? data["pid"].Value<int>() : 0;
+                    string message = data.ContainsKey("message") ? data["message"].ToString() : "";
+                    if (!string.IsNullOrEmpty(message))
+                        Console.WriteLine($"[WARN PID {pid}] {message}");
+                }
+                catch
+                {
+                    // ignore malformed warn messages
+                }
+            });
+
+            AddListener("error", (behavior, data) =>
+            {
+                try
+                {
+                    int pid = data.ContainsKey("pid") ? data["pid"].Value<int>() : 0;
+                    string message = data.ContainsKey("message") ? data["message"].ToString() : "";
+                    if (!string.IsNullOrEmpty(message))
+                        Console.WriteLine($"[ERROR PID {pid}] {message}");
+                }
+                catch
+                {
+                    // ignore malformed error messages
+                }
+            });
         }
 
         public Client FindClientByProcessId(int pid) => _clients.FirstOrDefault(c => c.GetProcess().Id == pid);

@@ -20,7 +20,7 @@ task.spawn(function()
 	local USER_AGENT = "Executor/"..VERSION
 
 	local Executor, Bridge, Utils = {}, {}, {}
-	local client = WebSocketService:CreateClient("ws://127.0.0.1:9001")
+	local client = WebSocketService:CreateClient("ws://127.0.0.1:6969")
 
 	--// Utils
 	function Utils:GetRandomModule()
@@ -455,9 +455,8 @@ task.spawn(function()
 		["action"] = "initialize",
 	})
 
-	print("[Executor] Injected successfully")
-
 end)
+
 while true do  
-	task.wait(e9)
+	task.wait(9e9)
 end

@@ -97,9 +97,8 @@ namespace Client
             byte[] raw = File.ReadAllBytes(compiledPath);
             File.Delete(compiledPath);
 
-            // Keep it as bytes, sign the bytecode directly
-            byte[] signedCompressed = Bytecodes.SignBytecode(raw); 
-            return signedCompressed;
+            // Console.WriteLine("[*] " + BitConverter.ToString(raw.Take(67).ToArray()).Replace("-", " "));
+            return raw;
         }
     }
 }

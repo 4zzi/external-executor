@@ -72,7 +72,7 @@
             },
             "ZstdNet": {
               "target": "Package",
-              "version": "[1.0.3, )"
+              "version": "[1.2.0, )"
             },
             "xxHashSharp": {
               "target": "Package",

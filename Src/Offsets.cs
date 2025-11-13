@@ -6,45 +6,43 @@ namespace Offsets
       bytecode pointer 0x10
       bytecode size 0x20
       children end + classname 0x8
+      fake data model to datamodel 0x1C0
       
-     local script
-          bytecode 0x1a8
-          hash 0x1b8
+      local script
+          pointer 0x10
       module script
-          bytecode 0x150
-          hash 0x168
-          require bypass 0x8e0
+          pointer 0x10
           stringlength 0x10
-          iscorescript 0x188
-          flags (0x188 - 0x4) or in short 0x184
+          flags (iscorescript - 0x4)
      */
 
      public static class FFlags
      {
-          public static readonly int DebugDisableTimeoutDisconnect = 0x6437ef8;
-          public static readonly int EnableLoadModule = 0x6427258;
-          public static readonly int PartyPlayerInactivityTimeoutInSeconds = 0x63edd74;
-          public static readonly int TaskSchedulerTargetFps = 0x6d41110;
-          public static readonly int WebSocketServiceEnableClientCreation = 0x64449E0;
+          public static readonly int DebugDisableTimeoutDisconnect = 0x6542420;
+          public static readonly int EnableLoadModule = 0x6531780;
+          public static readonly int PartyPlayerInactivityTimeoutInSeconds = 0x64f7d90;
+          public static readonly int TaskSchedulerTargetFps = 0x6e54ccc;
+          public static readonly int WebSocketServiceEnableClientCreation = 0x654f028;
      }
     
     public static class FakeDataModel {
-         public static readonly int Pointer = 0x759fd28;
-         public static readonly int Real = 0x1c0;
+         public static readonly int Pointer = 0x76b46b8;
     }
 
     public static class Instance {
-         public static readonly int ChildrenStart = 0x70;
-         public static readonly int Name = 0x90;
+         public static readonly int ChildrenStart = 0x68;
+         public static readonly int Name = 0xa8;
     }
 
     public static class LocalScript {
-         public static readonly int Embedded = 0x1c0; 
+         public static readonly int ByteCode = 0x1A0;
+         public static readonly int Hash = 0x1B0;
     }
 
     public static class ModuleScript {
-         public static readonly int Embedded = 0x160;
-         public static readonly int RunContext = 0x150;
-         public static readonly int ScriptContext = 0x3e0;
+         public static readonly int ByteCode = 0x148;
+         public static readonly int Hash = 0x160;
+         public static readonly int IsCoreScript = 0x914;
+         public static readonly int Flags = 0x17c;
     }
 }

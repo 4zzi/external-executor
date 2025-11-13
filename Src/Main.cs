@@ -39,7 +39,7 @@ namespace Main
                 (ulong)Memory.Read<IntPtr>(
                     (ulong)Memory.GetBaseAddress() + (ulong)Offsets.FakeDataModel.Pointer
                 )
-                + (ulong)Offsets.FakeDataModel.Real
+                + (ulong)0x1C0
             )
         );
         public Websocket _server;
@@ -84,17 +84,13 @@ namespace Main
                 
                 try
                 {
-                    REPL.REPLPrint("[*] Unlocked module");
                     spoof.UnlockModule();
-
-                    REPL.REPLPrint("[*] Set Bytecode");
                     Bytecodes.SetBytecode(spoof, bytecode);
 
                     manager.SpoofWith(spoof.Self);
                     Memory.Write((ulong)Memory.GetBaseAddress().ToInt64() + (ulong)Offsets.FFlags.WebSocketServiceEnableClientCreation, 1);
 
                     REPL.REPLPrint("[*] Enabled WebSocket");
-                    REPL.REPLPrint("[*] Compiled bytecode");
 
                     try
                     {
@@ -215,7 +211,7 @@ namespace Main
                         {
                             try
                             {
-                                REPL.REPLPrint("[*] Injecting into process " + pid + "...");
+                                REPL.REPLPrint("[*] Running Process " + pid + "...");
                                 Roblox.Inject();
                                 
                                 Thread.Sleep(500);
@@ -228,7 +224,7 @@ namespace Main
                                     Thread.Sleep(200);
                                     
                                     var clientCount = BridgeHost.Server.GetClients().Count();
-                                    REPL.REPLPrint($"[*] Added {clientCount} client\n");
+                                    REPL.REPLPrint($"[*] Injected onto {clientCount} client\n");
                                 }
                                 catch (Exception addEx)
                                 {

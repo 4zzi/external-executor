@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "vdcm6dbDg98=",
+  "dgSpecHash": "SDy0fiLMtkk=",
   "success": true,
   "projectFilePath": "I:\\Download\\visual studio stuff\\cs\\Labubu\\labubu.csproj",
   "expectedPackageFiles": [
@@ -14,18 +14,6 @@
     "C:\\Users\\Admin\\.nuget\\packages\\zstdnet\\1.2.0\\zstdnet.1.2.0.nupkg.sha512"
   ],
   "logs": [
-    {
-      "code": "NU1603",
-      "level": "Warning",
-      "message": "labubu depends on ZstdNet (>= 1.0.3) but ZstdNet 1.0.3 was not found. ZstdNet 1.2.0 was resolved instead.",
-      "projectPath": "I:\\Download\\visual studio stuff\\cs\\Labubu\\labubu.csproj",
-      "warningLevel": 1,
-      "filePath": "I:\\Download\\visual studio stuff\\cs\\Labubu\\labubu.csproj",
-      "libraryId": "ZstdNet",
-      "targetGraphs": [
-        "net8.0"
-      ]
-    },
     {
       "code": "NU1701",
       "level": "Warning",

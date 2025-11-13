@@ -31,3 +31,4 @@ I:\Download\visual studio stuff\cs\Labubu\bin\Debug\net8.0\Newtonsoft.Json.dll
 I:\Download\visual studio stuff\cs\Labubu\bin\Debug\net8.0\websocket-sharp.dll
 I:\Download\visual studio stuff\cs\Labubu\bin\Debug\net8.0\x64\libzstd.dll
 I:\Download\visual studio stuff\cs\Labubu\bin\Debug\net8.0\x86\libzstd.dll
+I:\Download\visual studio stuff\cs\Labubu\obj\Debug\net8.0\labubu.sourcelink.json

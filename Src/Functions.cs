@@ -2,6 +2,7 @@ using System.Linq;
 using Microsoft.Win32;
 using RMemory;
 using Main;
+using System.Text;
 
 namespace Functions
 {
@@ -102,10 +103,14 @@ namespace Functions
                 throw new Exception("[*] Instance::UnlockModule(): " + Name + " is not a ModuleScript");
 
             bool ok =
-                Memory.WriteTo(this, 0x184, 0x100000000) &&
-                Memory.WriteTo(this, 0x188, 0x1);
+                Memory.WriteTo(this, (ulong)Offsets.ModuleScript.Flags, 0x100000000) &&
+                Memory.WriteTo(this, (ulong)Offsets.ModuleScript.IsCoreScript, 0x1);
             if (!ok)
                 throw new Exception("[*] Instance::UnlockModule(): failed to unlock module " + Name);
+            else
+            {
+                Console.WriteLine("[*] Unlocked Module");
+            }
         }
 
         public void SpoofWith(IntPtr instancePtr)
@@ -249,5 +254,26 @@ namespace Functions
 
             return last ?? new RobloxInstance(IntPtr.Zero);
         }
+
+        public RobloxInstance GetBytecode()
+        {
+            if (this.ClassName != "LocalScript" && this.ClassName != "ModuleScript")
+                throw new InvalidOperationException($"Instance::GetBytecode(): {this.Name} is not a LocalScript or a ModuleScript");
+
+            ulong embeddedOffset = (this.ClassName == "LocalScript") 
+                ? (ulong)Offsets.LocalScript.ByteCode 
+                : (ulong)Offsets.ModuleScript.ByteCode;
+
+            ulong embeddedPtr = Memory.ReadFrom<ulong>(this, embeddedOffset);
+
+            ulong bytecodePtr = Memory.Read<ulong>(embeddedPtr + 0x10);
+            ulong bytecodeSize = Memory.Read<ulong>(embeddedPtr + 0x20);
+
+            byte[] bytecodeBytes = Memory.Read<byte[]>(bytecodePtr, (ulong)bytecodeSize);
+            string bytecode = Encoding.UTF8.GetString(bytecodeBytes);
+
+            return Bytecodes.Decompress(bytecode);
+        }
+
     }
 }
