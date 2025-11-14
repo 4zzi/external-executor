@@ -1,2 +1,5 @@
+## Introduction
+oracle executor corescript hijacker
+
 ## Roadmap
-fix init not running after correct unlocking spoofing n writing
+in the roadmap file lol
