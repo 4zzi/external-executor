@@ -109,7 +109,6 @@ namespace Functions
                 throw new Exception("[*] Instance::UnlockModule(): failed to unlock module " + Name);
             else
             {
-                Console.WriteLine("[*] Unlocked Module");
             }
         }
 
@@ -254,26 +253,5 @@ namespace Functions
 
             return last ?? new RobloxInstance(IntPtr.Zero);
         }
-
-        public RobloxInstance GetBytecode()
-        {
-            if (this.ClassName != "LocalScript" && this.ClassName != "ModuleScript")
-                throw new InvalidOperationException($"Instance::GetBytecode(): {this.Name} is not a LocalScript or a ModuleScript");
-
-            ulong embeddedOffset = (this.ClassName == "LocalScript") 
-                ? (ulong)Offsets.LocalScript.ByteCode 
-                : (ulong)Offsets.ModuleScript.ByteCode;
-
-            ulong embeddedPtr = Memory.ReadFrom<ulong>(this, embeddedOffset);
-
-            ulong bytecodePtr = Memory.Read<ulong>(embeddedPtr + 0x10);
-            ulong bytecodeSize = Memory.Read<ulong>(embeddedPtr + 0x20);
-
-            byte[] bytecodeBytes = Memory.Read<byte[]>(bytecodePtr, (ulong)bytecodeSize);
-            string bytecode = Encoding.UTF8.GetString(bytecodeBytes);
-
-            return Bytecodes.Decompress(bytecode);
-        }
-
     }
 }

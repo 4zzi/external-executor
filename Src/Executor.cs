@@ -32,7 +32,6 @@ namespace Client
 
             string scriptContent = File.ReadAllText(initscript);
             scriptContent = Memory.ReplaceString(scriptContent, "%PROCESS_ID%", Memory.ProcessID);
-            scriptContent = Memory.ReplaceString(scriptContent, "%VERSION%", Version);
 
             // write to temporary file, not original
             string tempPath = Path.Combine(root, "Roblox", "InitScript.lua");

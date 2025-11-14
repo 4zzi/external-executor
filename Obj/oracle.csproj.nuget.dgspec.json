@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "I:\\Download\\visual studio stuff\\cs\\Labubu\\labubu.csproj": {}
+    "I:\\Download\\visual studio stuff\\cs\\Oracle\\oracle.csproj": {}
   },
   "projects": {
-    "I:\\Download\\visual studio stuff\\cs\\Labubu\\labubu.csproj": {
+    "I:\\Download\\visual studio stuff\\cs\\Oracle\\oracle.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "I:\\Download\\visual studio stuff\\cs\\Labubu\\labubu.csproj",
-        "projectName": "labubu",
-        "projectPath": "I:\\Download\\visual studio stuff\\cs\\Labubu\\labubu.csproj",
+        "projectUniqueName": "I:\\Download\\visual studio stuff\\cs\\Oracle\\oracle.csproj",
+        "projectName": "oracle",
+        "projectPath": "I:\\Download\\visual studio stuff\\cs\\Oracle\\oracle.csproj",
         "packagesPath": "C:\\Users\\Admin\\.nuget\\packages\\",
-        "outputPath": "I:\\Download\\visual studio stuff\\cs\\Labubu\\obj\\",
+        "outputPath": "I:\\Download\\visual studio stuff\\cs\\Oracle\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\Admin\\AppData\\Roaming\\NuGet\\NuGet.Config",

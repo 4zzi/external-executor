@@ -69,7 +69,7 @@ namespace RMemory
             byte[] buffer = new byte[structSize];
 
             if (!ReadProcessMemory(Handle, (IntPtr)address, buffer, structSize, out _))
-                throw new InvalidOperationException($"[ERROR] Failed to read memory at 0x{address:X}");
+                throw new InvalidOperationException($"Failed to read memory at 0x{address:X}");
 
             if (!convert)
                 return default;

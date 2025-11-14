@@ -33,6 +33,8 @@ namespace Main
     {
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr GetConsoleWindow();
 
         public static RobloxInstance Game = new RobloxInstance(
             Memory.Read<IntPtr>(
@@ -43,23 +45,6 @@ namespace Main
             )
         );
         public Websocket _server;
-
-        public void Execute(string source)
-        {
-            JObject request = new JObject
-            {
-                ["action"] = "execute",
-                ["source"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(source))
-            };
-
-            if (BridgeHost.Server == null)
-                throw new InvalidOperationException("[ERROR] Websocket server not initialized.");
-
-            JObject response = BridgeHost.Server.SendAndReceive(request, Memory.ProcessID).Result;
-
-            if (response["*"]?.Value<bool>() != true)
-                throw new Exception(response["message"]?.ToString());
-        }
 
         public void Inject()
         {
@@ -72,7 +57,7 @@ namespace Main
                 {
                     throw new Exception("Failed to find PlayerListManager");
                 }
-                
+
                 var spoof = Game.FindFirstChildFromPath("StarterPlayer.StarterPlayerScripts.PlayerModule.ControlModule.VRNavigation");
                 if (spoof == null || spoof.Self == IntPtr.Zero)
                 {
@@ -81,7 +66,7 @@ namespace Main
 
                 string initscript = Executor.GetInitScript();
                 byte[] bytecode = Executor.Compile(initscript);
-                
+
                 try
                 {
                     spoof.UnlockModule();
@@ -89,8 +74,6 @@ namespace Main
 
                     manager.SpoofWith(spoof.Self);
                     Memory.Write((ulong)Memory.GetBaseAddress().ToInt64() + (ulong)Offsets.FFlags.WebSocketServiceEnableClientCreation, 1);
-
-                    REPL.REPLPrint("[*] Enabled WebSocket");
 
                     try
                     {
@@ -107,23 +90,29 @@ namespace Main
                     }
 
                     VirtualInput.Keyboard.KeyDown(VirtualKeyCode.ESCAPE);
-                    Thread.Sleep(50);
+                    Thread.Sleep(1);
                     VirtualInput.Keyboard.KeyUp(VirtualKeyCode.ESCAPE);
 
-                    Thread.Sleep(100);
+                    Thread.Sleep(1);
 
                     VirtualInput.Keyboard.KeyDown(VirtualKeyCode.ESCAPE);
-                    Thread.Sleep(50);
+                    Thread.Sleep(1);
                     VirtualInput.Keyboard.KeyUp(VirtualKeyCode.ESCAPE);
 
-                    Thread.Sleep(100);
+                    Thread.Sleep(1);
 
                     VirtualInput.Keyboard.KeyDown(VirtualKeyCode.F9);
-                    Thread.Sleep(50);
+                    Thread.Sleep(1);
                     VirtualInput.Keyboard.KeyUp(VirtualKeyCode.F9);
 
                     manager.SpoofWith(manager.Self);
                     File.Delete(initscript);
+
+                    IntPtr consoleWindow = GetConsoleWindow();
+                    if (consoleWindow != IntPtr.Zero)
+                    {
+                        SetForegroundWindow(consoleWindow);
+                    }
                 }
                 finally
                 {
@@ -140,10 +129,45 @@ namespace Main
                 throw;
             }
         }
+        public void Execute(string source)
+        {
+            try
+            {
+                string folderPath = Path.Combine(Path.GetTempPath(), "Oracle Executor");
+                Directory.CreateDirectory(folderPath);
+
+                string timestamp = DateTime.Now.ToString("hh-mmtt_MM-dd-yyyy").ToLower(); // 02-33pm_11-14-2025
+                string raw = Path.Combine(folderPath, timestamp + ".lua");
+
+                File.WriteAllText(raw, $"script.Parent = nil \n\nlocal PROCESS_ID = {Memory.ProcessID} \n local VERSION = '0.1'\n\n" + source + "\n\nwhile true do\n task.wait(9e9)\nend");
+                
+                var execute = new JObject
+                {
+                    ["action"] = "Execute",
+                    ["pid"] = Memory.ProcessID,
+                    ["source"] = source
+                };
+
+                BridgeHost.Server.Send(execute, Memory.ProcessID);
+            }
+            catch (Exception ex)
+            {
+                REPL.REPLPrint($"[ERROR] Execution failed: {ex.Message}");
+                REPL.REPLPrint($"[ERROR] Stack trace: {ex.StackTrace}");
+                if (ex.InnerException != null)
+                {
+                    REPL.REPLPrint($"[ERROR] Inner exception: {ex.InnerException.Message}");
+                }
+                throw;
+            }
+        }
     };
 
     public class Program
     {
+        private static ManualResetEventSlim initializeReceived = new ManualResetEventSlim(false);
+        private static ManualResetEventSlim executeReceived = new ManualResetEventSlim(false);
+
         public static void Main(string[] args)
         {
             try
@@ -152,12 +176,27 @@ namespace Main
 
                 BridgeHost.Server = new Websocket("127.0.0.1", 6969);
 
+                BridgeHost.Server.OnInitialized += (pid) =>
+                {
+                    initializeReceived.Set();
+                };
+
+                BridgeHost.Server.AddListener("execute", (behavior, data) =>
+                {
+                    string status = data.ContainsKey("status") ? data["status"].ToString() : "";
+                    
+                    if (status == "ready")
+                    {
+                        executeReceived.Set();
+                    }
+                });
+
                 if (!BridgeHost.Server.Run())
                 {
                     REPL.REPLPrint("[FATAL] Failed to start websocket server.");
                     return;
                 }
-                
+
                 int attempts = 0;
                 while (!Memory.Attached())
                 {
@@ -179,12 +218,11 @@ namespace Main
                     }
                 }
 
-                Console.Title = "Labubu Executor.exe (64 bit)";
-
-                REPL.REPLPrint("[*] Attached to process (PID: " + Memory.ProcessID + ")");
+                Console.Title = "Oracle.exe";
                 Thread.Sleep(100);
 
-                REPL.REPLPrint("[*] Type 'inject' to inject, or enter lua codes to execute.");
+                REPL.REPLPrint("[*] Type 'inject' to inject");
+                REPL.REPLPrint("[*] Press enter on empty line to execute");
                 REPL.REPLPrint("[*] Type 'exit' to quit.\n");
 
                 var Roblox = new Roblox();
@@ -192,7 +230,7 @@ namespace Main
 
                 while (true)
                 {
-                    Console.Write(">> ");
+                    Console.Write("> ");
 
                     string input = Console.ReadLine()?.Trim();
 
@@ -201,7 +239,6 @@ namespace Main
 
                     string[] parts = input.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
                     string command = parts.Length > 0 ? parts[0] : "";
-                    string code = parts.Length > 1 ? parts[1] : input;
 
                     if (command.Equals("inject", StringComparison.OrdinalIgnoreCase))
                     {
@@ -212,25 +249,21 @@ namespace Main
                             try
                             {
                                 REPL.REPLPrint("[*] Running Process " + pid + "...");
+                                
+                                initializeReceived.Reset();
                                 Roblox.Inject();
-                                
-                                Thread.Sleep(500);
-                                
-                                try
+
+                                if (initializeReceived.Wait(TimeSpan.FromSeconds(10)))
                                 {
                                     injectedClient = new Client(pid, BridgeHost.Server);
                                     BridgeHost.Server.AddClient(injectedClient);
-                                    
-                                    Thread.Sleep(200);
-                                    
+
                                     var clientCount = BridgeHost.Server.GetClients().Count();
-                                    REPL.REPLPrint($"[*] Injected onto {clientCount} client\n");
+                                    REPL.REPLPrint($"[*] Injected\n");
                                 }
-                                catch (Exception addEx)
+                                else
                                 {
-                                    REPL.REPLPrint($"[ERROR] Failed to add client: {addEx.Message}\n");
-                                    injectedClient = null;
-                                    throw;
+                                    REPL.REPLPrint("[ERROR] Injection timeout\n");
                                 }
                             }
                             catch (Exception ex)
@@ -245,7 +278,7 @@ namespace Main
                         }
                         else
                         {
-                            REPL.REPLPrint($"[*] Already attached to {pid}\n");
+                            REPL.REPLPrint($"[*] Already injected to {pid}\n");
                         }
                     }
                     else
@@ -258,8 +291,25 @@ namespace Main
 
                         try
                         {
-                            Roblox.Execute(code);
-                            REPL.REPLPrint("[*] Executed.\n");
+                            StringBuilder codeBuilder = new StringBuilder();
+                            codeBuilder.AppendLine(input);
+
+                            int lineNumber = 2;
+                            while (true)
+                            {
+                                Console.Write(new string('>', lineNumber) + " ");
+                                string line = Console.ReadLine();
+                                
+                                if (string.IsNullOrEmpty(line))
+                                    break;
+                                
+                                codeBuilder.AppendLine(line);
+                                lineNumber++;
+                            }
+
+                            string source = codeBuilder.ToString().Trim();
+                            Roblox.Execute(source);
+                            REPL.REPLPrint("\n");
                         }
                         catch (Exception ex)
                         {
@@ -275,7 +325,7 @@ namespace Main
                 REPL.REPLPrint("\nPress any key to exit...");
                 Console.ReadKey();
             }
-            
+
             REPL.REPLPrint("[*] Exiting... \n");
         }
     }

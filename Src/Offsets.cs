@@ -22,7 +22,7 @@ namespace Offsets
           public static readonly int EnableLoadModule = 0x6531780;
           public static readonly int PartyPlayerInactivityTimeoutInSeconds = 0x64f7d90;
           public static readonly int TaskSchedulerTargetFps = 0x6e54ccc;
-          public static readonly int WebSocketServiceEnableClientCreation = 0x654f028;
+          public static readonly int WebSocketServiceEnableClientCreation = 0x654F028;
      }
     
     public static class FakeDataModel {
@@ -32,6 +32,7 @@ namespace Offsets
     public static class Instance {
          public static readonly int ChildrenStart = 0x68;
          public static readonly int Name = 0xa8;
+         public static readonly int LocalPlayer = 0x128;
     }
 
     public static class LocalScript {

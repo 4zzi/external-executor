@@ -1,0 +1,6 @@
+i:\Download\visual studio stuff\cs\Oracle\obj\x64\Debug\net8.0\oracle.csproj.AssemblyReference.cache
+i:\Download\visual studio stuff\cs\Oracle\obj\x64\Debug\net8.0\oracle.GeneratedMSBuildEditorConfig.editorconfig
+i:\Download\visual studio stuff\cs\Oracle\obj\x64\Debug\net8.0\oracle.AssemblyInfoInputs.cache
+i:\Download\visual studio stuff\cs\Oracle\obj\x64\Debug\net8.0\oracle.AssemblyInfo.cs
+i:\Download\visual studio stuff\cs\Oracle\obj\x64\Debug\net8.0\oracle.csproj.CoreCompileInputs.cache
+i:\Download\visual studio stuff\cs\Oracle\obj\x64\Debug\net8.0\oracle.sourcelink.json

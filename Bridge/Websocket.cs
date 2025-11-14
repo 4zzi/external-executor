@@ -5,8 +5,9 @@ using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using WebSocketSharp;
 using WebSocketSharp.Server;
-using Functions;
 using System.Text;
+using System.Text.RegularExpressions;
+using Functions;
 using Client;
 using Main;
 using RMemory;
@@ -28,6 +29,7 @@ namespace Bridge
         private readonly List<Client> _clients = new();
         private readonly Dictionary<string, TaskCompletionSource<JObject>> _onGoingRequests = new();
         private readonly Dictionary<string, Action<WebsocketBehavior, JObject>> _listeners = new();
+        public event Action<int> OnInitialized;
 
         public Websocket(string host, int port)
         {
@@ -43,7 +45,6 @@ namespace Bridge
             try
             {
                 _server.Start();
-                Console.WriteLine($"[*] Server running at {_host}:{_port}");
                 return true;
             }
             catch (Exception e)
@@ -165,15 +166,13 @@ namespace Bridge
             AddListener("initialize", (behavior, data) =>
             {
                 int pid = data.ContainsKey("pid") ? data["pid"].Value<int>() : 0;
-                Console.WriteLine($"[*] Client {pid} initialized and connected via WebSocket");
                 
                 lock (_connectionLock)
                 {
                     _connections[pid] = behavior;
                 }
                 
-                // Set ping interval (WebSocketSharp doesn't have direct ping interval method)
-                // You might need to implement this separately if needed
+                OnInitialized?.Invoke(pid);
             });
 
             AddListener("is_compilable", (behavior, data) =>
@@ -200,13 +199,12 @@ namespace Bridge
                     byte[] sourceBytes = Convert.FromBase64String(source);
                     string decodedSource = Encoding.UTF8.GetString(sourceBytes);
 
-                    // Try to compile to check if it's valid
                     string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.lua");
                     File.WriteAllText(tempFile, decodedSource);
                     
                     try
                     {
-                        Executor.Compile(tempFile);
+                        byte[] bytecode = Executor.Compile(tempFile);  // Changed this line - assign to variable
                         response["success"] = true;
                     }
                     finally
@@ -437,7 +435,7 @@ namespace Bridge
                         throw new Exception("Script pointer is null");
 
                     var script = new RobloxInstance(scriptPtr);
-                    byte[] bytecode = script.GetBytecode();
+                    byte[] bytecode = Bytecodes.GetBytecode(script);
 
                     response["bytecode"] = Convert.ToBase64String(bytecode);
                     response["success"] = true;
@@ -501,51 +499,6 @@ namespace Bridge
                 }
 
                 behavior.SendJson(response);
-            });
-
-            AddListener("print", (behavior, data) =>
-            {
-                try
-                {
-                    int pid = data.ContainsKey("pid") ? data["pid"].Value<int>() : 0;
-                    string message = data.ContainsKey("message") ? data["message"].ToString() : "";
-                    if (!string.IsNullOrEmpty(message))
-                        Console.WriteLine($"[PID {pid}] {message}");
-                }
-                catch
-                {
-                    // ignore malformed print messages
-                }
-            });
-
-            AddListener("warn", (behavior, data) =>
-            {
-                try
-                {
-                    int pid = data.ContainsKey("pid") ? data["pid"].Value<int>() : 0;
-                    string message = data.ContainsKey("message") ? data["message"].ToString() : "";
-                    if (!string.IsNullOrEmpty(message))
-                        Console.WriteLine($"[WARN PID {pid}] {message}");
-                }
-                catch
-                {
-                    // ignore malformed warn messages
-                }
-            });
-
-            AddListener("error", (behavior, data) =>
-            {
-                try
-                {
-                    int pid = data.ContainsKey("pid") ? data["pid"].Value<int>() : 0;
-                    string message = data.ContainsKey("message") ? data["message"].ToString() : "";
-                    if (!string.IsNullOrEmpty(message))
-                        Console.WriteLine($"[ERROR PID {pid}] {message}");
-                }
-                catch
-                {
-                    // ignore malformed error messages
-                }
             });
         }
 
