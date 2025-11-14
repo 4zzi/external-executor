@@ -25,17 +25,17 @@ namespace Client
         public static string GetInitScript()
         {
             string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
-            string initscript = Path.Combine(root, "Roblox", "DummyScript.lua");
+            string initscript = Path.Combine(root, "Roblox", "Injector.lua");
 
             if (!File.Exists(initscript))
-                throw new FileNotFoundException($"DummyScript.lua not found at: {initscript}");
+                throw new FileNotFoundException($"Injector not found at: {initscript}");
 
             string scriptContent = File.ReadAllText(initscript);
             scriptContent = Memory.ReplaceString(scriptContent, "%PROCESS_ID%", Memory.ProcessID);
 
             // write to temporary file, not original
             string tempPath = Path.Combine(root, "Roblox", "InitScript.lua");
-            File.WriteAllText(tempPath, scriptContent);
+            File.WriteAllText(tempPath, "script.Parent=nil;task.spawn(function()" + scriptContent + "\nend);while true do task.wait(9e9) end");
 
             return tempPath;
         }

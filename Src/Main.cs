@@ -93,7 +93,7 @@ namespace Main
                     IntPtr consoleWindow = GetConsoleWindow();
                     if (consoleWindow != IntPtr.Zero)
                         SetForegroundWindow(consoleWindow);
-                    }
+                }
                 else
                 {
                     throw new Exception("[*] Only supported on windows.");
@@ -108,6 +108,7 @@ namespace Main
                 throw;
             }
         }
+        
         public async Task Execute(string source)
         {
             try
@@ -172,81 +173,67 @@ namespace Main
                 }
 
                 Console.Title = "Oracle.exe";
-                Thread.Sleep(100);
-
-                REPL.REPLPrint("[*] Type 'inject' to inject");
-                REPL.REPLPrint("[*] Press enter on empty line to execute");
-                REPL.REPLPrint("[*] Type 'exit' to quit.\n");
+                Console.Clear();
 
                 var Roblox = new Roblox();
                 Client injectedClient = null;
+
+                // Auto-inject
+                try
+                {
+                    Roblox.Inject();
+
+                    injectedClient = new Client(Memory.ProcessID, BridgeHost.Server);
+                    BridgeHost.Server.AddClient(injectedClient);
+
+                    REPL.REPLPrint("[*] Press enter on empty line to execute");
+                    REPL.REPLPrint("[*] Cls to clear console\n");
+                }
+                catch (Exception ex)
+                {
+                    REPL.REPLPrint("[ERROR] Injection failed: " + ex.Message);
+                    REPL.REPLPrint("[ERROR] Stack trace: " + ex.StackTrace);
+                    Console.ReadKey();
+                    return;
+                }
 
                 while (true)
                 {
                     Console.Write("> ");
                     string input = Console.ReadLine()?.Trim();
+
                     if (string.IsNullOrEmpty(input)) continue;
                     if (input.Equals("exit", StringComparison.OrdinalIgnoreCase)) break;
-
-                    if (input.Equals("inject", StringComparison.OrdinalIgnoreCase))
+                    if (input.Equals("cls", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (injectedClient == null)
-                        {
-                            try
-                            {
-                                REPL.REPLPrint("[*] Running Process " + Memory.ProcessID + "...");
-                                Roblox.Inject();
-
-                                injectedClient = new Client(Memory.ProcessID, BridgeHost.Server);
-                                BridgeHost.Server.AddClient(injectedClient);
-
-                                REPL.REPLPrint("[*] Injected\n");
-                            }
-                            catch (Exception ex)
-                            {
-                                REPL.REPLPrint("[ERROR] Injection failed: " + ex.Message);
-                                REPL.REPLPrint("[ERROR] Stack trace: " + ex.StackTrace);
-                                Console.ReadKey();
-                                Console.WriteLine();
-                            }
-                        }
-                        else
-                        {
-                            REPL.REPLPrint($"[*] Already injected to {Memory.ProcessID}\n");
-                        }
+                        Console.Clear();
+                        REPL.REPLPrint("[*] Press enter on empty line to execute");
+                        REPL.REPLPrint("[*] Cls to clear console\n");
                     }
-                    else
+
+                    try
                     {
-                        if (injectedClient == null)
+                        StringBuilder codeBuilder = new StringBuilder();
+                        codeBuilder.AppendLine(input);
+
+                        int lineNumber = 2;
+                        while (true)
                         {
-                            REPL.REPLPrint("[ERROR] No client attached. Please run 'inject' first.\n");
-                            continue;
+                            Console.Write(new string('>', lineNumber) + " ");
+                            string line = Console.ReadLine();
+                            if (string.IsNullOrEmpty(line)) break;
+
+                            codeBuilder.AppendLine(line);
+                            lineNumber++;
                         }
 
-                        try
-                        {
-                            StringBuilder codeBuilder = new StringBuilder();
-                            codeBuilder.AppendLine(input);
-
-                            int lineNumber = 2;
-                            while (true)
-                            {
-                                Console.Write(new string('>', lineNumber) + " ");
-                                string line = Console.ReadLine();
-                                if (string.IsNullOrEmpty(line)) break;
-
-                                codeBuilder.AppendLine(line);
-                                lineNumber++;
-                            }
-
-                            string source = codeBuilder.ToString().Trim();
-                            await Roblox.Execute(source);
-                            REPL.REPLPrint("[*] Executed code \n");
-                        }
-                        catch (Exception ex)
-                        {
-                            REPL.REPLPrint("[ERROR] " + ex.Message + "\n");
-                        }
+                        string source = codeBuilder.ToString().Trim();
+                        await Roblox.Execute(source);
+                        REPL.REPLPrint("------------------\n");
+                    }
+                    catch (Exception ex)
+                    {
+                        REPL.REPLPrint("[ERROR] " + ex.Message + "\n");
                     }
                 }
             }
@@ -257,7 +244,7 @@ namespace Main
                 Console.ReadKey();
             }
 
-            REPL.REPLPrint("[*] Exiting... \n");
+            REPL.REPLPrint("[*] Exiting...\n");
         }
     }
 }

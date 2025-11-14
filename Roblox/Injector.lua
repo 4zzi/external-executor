@@ -1,6 +1,4 @@
-script.Parent = nil
 
-task.spawn(function()
 	local HttpService = game:GetService("HttpService")
 	local WebSocketService = game:GetService("WebSocketService")
 	local RobloxReplicatedStorage = game:GetService("RobloxReplicatedStorage")
@@ -181,13 +179,19 @@ task.spawn(function()
 
 	-- Executing
 	client.MessageReceived:Connect(function(rawData)
+		print("[DEBUG] Received message:", rawData)
+		
 		local success, data = pcall(HttpService.JSONDecode, HttpService, rawData)
 		if not success then 
+			warn("[ERROR] Failed to decode JSON:", data)
 			return 
 		end
 		
+		print("[DEBUG] Parsed data:", HttpService:JSONEncode(data))
+		
 		local id, action = data.id, data.action
 
+		-- Handle ongoing request responses first
 		if id and Bridge.on_going_requests[id] then
 			Bridge.on_going_requests[id]:Fire(data)
 			return
@@ -368,8 +372,3 @@ task.spawn(function()
 		Title = "Oracle", -- Required
 		Text = "Injected", -- Required
 	})
-end)
-
-while true do
-	task.wait(9e9)
-end
