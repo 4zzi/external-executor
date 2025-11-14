@@ -22,18 +22,18 @@ namespace Functions
 
         public string GetName(ulong addr)
         {
-            ulong namePtr = Memory.Read<ulong>((ulong)Self + (ulong)Offsets.Instance.Name);
+            nint namePtr = Memory.Read<nint>(Self + Offsets.Instance.Name);
 
             // If string length > 15, the actual string is stored elsewhere
             int length = Memory.Read<int>(namePtr + 0x10);
             if (length > 15)
-                namePtr = Memory.Read<ulong>(namePtr);
+                namePtr = Memory.Read<nint>(namePtr);
 
             // Read up to 640 bytes or until null terminator
             string result = string.Empty;
             for (int i = 0; i < 640; i++)
             {
-                byte b = Memory.Read<byte>(namePtr + (ulong)i);
+                byte b = Memory.Read<byte>(namePtr + (nint)i);
                 if (b == 0)
                     break;
 
@@ -47,12 +47,12 @@ namespace Functions
         {
             get
             {
-                ulong namePtr = Memory.Read<ulong>((ulong)Self + (ulong)Offsets.Instance.Name);
-                int length = Memory.Read<int>(namePtr + 0x10);
+                ulong namePtr = Memory.Read<ulong>((nint)Self + (nint)Offsets.Instance.Name);
+                int length = Memory.Read<int>((nint)namePtr + 0x10);
 
                 if (length <= 0 || length > 128) return "";
 
-                ulong dataPtr = (length >= 16) ? Memory.Read<ulong>(namePtr) : namePtr;
+                ulong dataPtr = (length >= 16) ? Memory.Read<ulong>((nint)namePtr) : namePtr;
 
                 char[] chars = new char[length];
                 for (int i = 0; i < length; i++)

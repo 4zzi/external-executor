@@ -37,6 +37,7 @@ namespace RMemory
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool GetModuleHandleEx(uint dwFlags, IntPtr lpAddress, out IntPtr phModule);
+
         [DllImport("kernel32.dll", SetLastError = true)]
         static extern IntPtr VirtualAllocEx(
             IntPtr hProcess,
@@ -45,6 +46,35 @@ namespace RMemory
             uint flAllocationType,
             uint flProtect
         );
+
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
+
+        [DllImport("kernel32.dll")]
+        private static extern bool Module32First(IntPtr hSnapshot, ref MODULEENTRY32 lpme);
+
+        [DllImport("kernel32.dll")]
+        private static extern bool CloseHandle(IntPtr hObject);
+
+        private const uint TH32CS_SNAPMODULE = 0x00000008;
+        private const uint TH32CS_SNAPMODULE32 = 0x00000010;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+        private struct MODULEENTRY32
+        {
+            public uint dwSize;
+            public uint th32ModuleID;
+            public uint th32ProcessID;
+            public uint GlblcntUsage;
+            public uint ProccntUsage;
+            public IntPtr modBaseAddr;
+            public uint modBaseSize;
+            public IntPtr hModule;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
+            public string szModule;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+            public string szExePath;
+        }
 
         public static bool Attached()
         {
@@ -63,32 +93,20 @@ namespace RMemory
         }
 
         // ---------------- Read ----------------
-        public static T Read<T>(ulong address, ulong size = 0, bool convert = true) where T : struct
+        public static T Read<T>(IntPtr addy) where T : struct
         {
-            int structSize = Marshal.SizeOf<T>();
-            byte[] buffer = new byte[structSize];
-
-            if (!ReadProcessMemory(Handle, (IntPtr)address, buffer, structSize, out _))
-                throw new InvalidOperationException($"Failed to read memory at 0x{address:X}");
-
-            if (!convert)
-                return default;
-
-            GCHandle handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
-            try
-            {
-                return Marshal.PtrToStructure<T>(handle.AddrOfPinnedObject());
-            }
-            finally
-            {
-                handle.Free();
-            }
+            int size = Marshal.SizeOf(typeof(T));
+            byte[] buff = new byte[size];
+            ReadProcessMemory(Handle, addy, buff, size, out nint readlen);
+            GCHandle gch = GCHandle.Alloc(buff, GCHandleType.Pinned);
+            T value = Marshal.PtrToStructure<T>(gch.AddrOfPinnedObject());
+            return value;
         }
 
         public static T ReadFrom<T>(Functions.RobloxInstance script, ulong offset) where T : struct
         {
             ulong address = (ulong)script.Self + offset;
-            return Read<T>(address);
+            return Read<T>((nint)address);
         }
 
         public static string ReadString(IntPtr addr, int max = 200)
@@ -166,12 +184,27 @@ namespace RMemory
         // ---------------- Other stuff ----------------
         public static IntPtr GetBaseAddress()
         {
-            var proc = Process.GetProcessById(ProcessID);
-            foreach (ProcessModule mod in proc.Modules)
+            if (Handle == IntPtr.Zero) return IntPtr.Zero;
+
+            try
             {
-                if (mod.ModuleName.Equals("RobloxPlayerBeta.exe", StringComparison.OrdinalIgnoreCase))
-                    return mod.BaseAddress;
+                IntPtr snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, (uint)ProcessID);
+                if (snapshot == IntPtr.Zero || snapshot == new IntPtr(-1))
+                    return IntPtr.Zero;
+
+                MODULEENTRY32 moduleEntry = new MODULEENTRY32();
+                moduleEntry.dwSize = (uint)Marshal.SizeOf(typeof(MODULEENTRY32));
+
+                if (Module32First(snapshot, ref moduleEntry))
+                {
+                    CloseHandle(snapshot);
+                    return moduleEntry.modBaseAddr;
+                }
+
+                CloseHandle(snapshot);
             }
+            catch { }
+
             return IntPtr.Zero;
         }
 

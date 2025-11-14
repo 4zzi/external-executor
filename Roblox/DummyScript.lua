@@ -1,4 +1,3 @@
--- 93 147 181
 script.Parent = nil
 
 local HttpService = game:GetService("HttpService")
@@ -74,6 +73,17 @@ function Utils:CreatePointer()
 end
 
 -- bridge
+Bridge.on_going_requests = {}
+
+function Bridge:Send(data)
+    if type(data) == "string" then
+        data = HttpService:JSONDecode(data)
+    end
+    if not data["pid"] then
+        data["pid"] = PROCESS_ID
+    end
+    client:Send(HttpService:JSONEncode(data))
+end
 
 function Bridge:SendAndReceive(data, timeout)
 	timeout = timeout or 5
@@ -105,7 +115,7 @@ function Bridge:SendAndReceive(data, timeout)
     connection:Disconnect()
 	bindable_event:Destroy()
 
-	if not response_data then --[[error("[Executor] timeout waiting for response " .. id, 2)]] end
+	if not response_data then error("timeout waiting for response " .. id, 2) end
 
     return response_data
 end
@@ -144,7 +154,7 @@ end
 function Bridge:Loadstring(chunk, chunk_name)
 	local module = Utils:GetRandomModule()
 
-	local response =self:SendAndReceive({
+	local response = self:SendAndReceive({
 		["action"] = "loadstring",
 		["chunk"] = chunk,
 		["chunk_name"] = chunk_name,
@@ -168,20 +178,41 @@ end
 
 -- executing
 client.MessageReceived:Connect(function(data)
-	local success, decoded = pcall(function()
+	local success, data = pcall(function()
 		return HttpService:JSONDecode(data)
 	end)
 	
 	if not success then return end
 	
-	local action = decoded.action
+	local action = data["action"]
+	local id = data["id"]
+	local _type = data["type"]
 	
 	if action == "Execute" then
-		if decoded.source then
-			local func, err = Bridge:Loadstring(data["source"], "Oracle")
-			setfenv(func, Utils:MergeTable(getfenv(func), Enviroment))
-			task.spawn(func)
+		local response = {}
+		response["type"] = "response"
+		response["success"] = false
+
+		if id then response["id"] = id end
+
+		if not data["source"] then
+			response["message"] = "Missing keys: source"
+			return Bridge:Send(response)
 		end
+
+		local func, err = Bridge:Loadstring(data["source"], "Executor")
+
+		if not func then
+			response["message"] = err
+			return Bridge:Send(response)
+		end
+
+		setfenv(func, Utils:MergeTable(getfenv(func), Container))
+
+		task.spawn(func)
+
+		response["success"] = true
+		return Bridge:Send(response)
 	end
 end)
 
