@@ -56,7 +56,7 @@ namespace Functions
 
                 char[] chars = new char[length];
                 for (int i = 0; i < length; i++)
-                    chars[i] = (char)Memory.Read<byte>(dataPtr + (ulong)i);
+                    chars[i] = (char)Memory.Read<byte>((nint)dataPtr + (nint)i);
 
                 string result = new string(chars);
                 return string.IsNullOrWhiteSpace(result) ? "" : result;
@@ -67,15 +67,15 @@ namespace Functions
         {
             get
             {
-                ulong classDesc = Memory.Read<ulong>((ulong)Self + 0x18);
-                ulong namePtr = Memory.Read<ulong>(classDesc + 0x8);
-                int length = Memory.Read<int>(namePtr + 0x10);
-                ulong dataPtr = (length > 16) ? Memory.Read<ulong>(namePtr) : namePtr;
+                ulong classDesc = Memory.Read<ulong>((nint)Self + 0x18);
+                ulong namePtr = Memory.Read<ulong>((nint)classDesc + 0x8);
+                int length = Memory.Read<int>((nint)namePtr + 0x10);
+                ulong dataPtr = (length > 16) ? Memory.Read<ulong>((nint)namePtr) : namePtr;
 
                 char[] chars = new char[length];
                 for (int i = 0; i < length; i++)
                 {
-                    chars[i] = (char)Memory.Read<byte>(dataPtr + (ulong)i);
+                    chars[i] = (char)Memory.Read<byte>((nint)dataPtr + (nint)i);
                 }
 
                 return new string(chars);
@@ -124,7 +124,7 @@ namespace Functions
 
         public RobloxInstance Parent()
         {
-            return new RobloxInstance(Memory.Read<IntPtr>((ulong)Self + 0x60));
+            return new RobloxInstance(Memory.Read<IntPtr>(Self + 0x60));
         }
 
         public List<RobloxInstance> GetDescendants()
@@ -155,13 +155,13 @@ namespace Functions
         {
             var children = new List<RobloxInstance>();
 
-            ulong start = Memory.Read<ulong>((ulong)Self + (ulong)Offsets.Instance.ChildrenStart);
-            ulong end = Memory.Read<ulong>(start + 0x8);
-            ulong ptr = Memory.Read<ulong>(start);
+            ulong start = Memory.Read<ulong>(Self + Offsets.Instance.ChildrenStart);
+            ulong end = Memory.Read<ulong>((nint)start + 0x8);
+            ulong ptr = Memory.Read<ulong>((nint)start);
 
             for (; ptr < end; ptr += 0x10UL)
             {
-                ulong childSelf = Memory.Read<ulong>(ptr);
+                ulong childSelf = Memory.Read<ulong>((nint)ptr);
                 if (childSelf != 0)
                     children.Add(new RobloxInstance((IntPtr)childSelf));
             }

@@ -9,6 +9,7 @@
       "oracle/1.0.0": {
         "dependencies": {
           "Blake3": "2.0.0",
+          "Fleck": "1.2.0",
           "H.InputSimulator": "1.5.0",
           "K4os.Compression.LZ4": "1.3.8",
           "K4os.Hash.xxHash": "1.0.8",
@@ -68,6 +69,14 @@
             "rid": "win-x86",
             "assetType": "native",
             "fileVersion": "0.0.0.0"
+          }
+        }
+      },
+      "Fleck/1.2.0": {
+        "runtime": {
+          "lib/netcoreapp2.0/Fleck.dll": {
+            "assemblyVersion": "1.2.0.0",
+            "fileVersion": "1.2.0.0"
           }
         }
       },
@@ -141,6 +150,13 @@
       "sha512": "sha512-v447kojeuNYSY5dvtVGG2bv1+M3vOWJXcrYWwXho/2uUpuwK6qPeu5WSMlqLm4VRJu96kysVO11La0zN3dLAuQ==",
       "path": "blake3/2.0.0",
       "hashPath": "blake3.2.0.0.nupkg.sha512"
+    },
+    "Fleck/1.2.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-bPLXn6QbLAFoviur6XbrKB0Zn6x04E8VibHXyHZeJsoC7bkUl5DVtzM5cZgDuqHkIrBqAXJyTNJwSNIc6wBJ2Q==",
+      "path": "fleck/1.2.0",
+      "hashPath": "fleck.1.2.0.nupkg.sha512"
     },
     "H.InputSimulator/1.5.0": {
       "type": "package",

@@ -115,13 +115,13 @@ public static class Bytecodes
 
         ulong embeddedPtr = Memory.ReadFrom<ulong>(script, embeddedOffset);
 
-        ulong bytecodePtr = Memory.Read<ulong>(embeddedPtr + 0x10);
-        ulong bytecodeSize = Memory.Read<ulong>(embeddedPtr + 0x20);
+        ulong bytecodePtr = Memory.Read<ulong>((nint)embeddedPtr + 0x10);
+        ulong bytecodeSize = Memory.Read<ulong>((nint)embeddedPtr + 0x20);
 
         byte[] buffer = new byte[bytecodeSize];
 
         for (ulong i = 0; i < bytecodeSize; i++)
-            buffer[i] = Memory.Read<byte>(bytecodePtr + i);
+            buffer[i] = Memory.Read<byte>((nint)bytecodePtr + (nint)i);
 
         // Pass raw bytes directly
         return Decompress(buffer);

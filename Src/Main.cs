@@ -36,57 +36,68 @@ namespace Main
         [DllImport("kernel32.dll")]
         private static extern IntPtr GetConsoleWindow();
 
-        public static RobloxInstance Game = new RobloxInstance(IntPtr.Zero);
+        public static RobloxInstance Game = new RobloxInstance(
+            Memory.Read<IntPtr>(
+                Memory.Read<IntPtr>(Memory.GetBaseAddress() + Offsets.FakeDataModel.Pointer)
+                +
+                0x1C0
+            )
+        );
         public Websocket _server;
 
         public void Inject()
         {
             try
             {
-                ulong pointer = Memory.Read<UIntPtr>(Memory.GetBaseAddress() + Offsets.FakeDataModel.Pointer);
-                ulong datamodel = Memory.Read<UIntPtr>((nint)pointer + 0x1c0);
-                Game = new RobloxInstance((nint)pointer);
-
-                var VirtualInput = new InputSimulator();
-
-                var manager = Game.FindFirstChildFromPath("CoreGui.RobloxGui.Modules.PlayerList.PlayerListManager");
-                if (manager == null || manager.Self == IntPtr.Zero)
-                    throw new Exception("Failed to find PlayerListManager");
-
-                var spoof = Game.FindFirstChildFromPath("StarterPlayer.StarterPlayerScripts.PlayerModule.ControlModule.VRNavigation");
-                if (spoof == null || spoof.Self == IntPtr.Zero)
-                    throw new Exception("Failed to find VRNavigation module");
-
-                string initscript = Executor.GetInitScript();
-                byte[] bytecode = Executor.Compile(initscript);
-
-                spoof.UnlockModule();
-                Bytecodes.SetBytecode(spoof, bytecode);
-
-                manager.SpoofWith(spoof.Self);
-                Memory.Write((ulong)Memory.GetBaseAddress().ToInt64() + (ulong)Offsets.FFlags.WebSocketServiceEnableClientCreation, 1);
-
-                try
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
-                    Process robloxProcess = Process.GetProcessById(Memory.ProcessID);
-                    if (robloxProcess.MainWindowHandle != IntPtr.Zero)
+                    var VirtualInput = new InputSimulator();
+                    var manager = Game.FindFirstChildFromPath("CoreGui.RobloxGui.Modules.PlayerList.PlayerListManager");
+
+                    if (manager == null || manager.Self == IntPtr.Zero)
+                        throw new Exception("Failed to find PlayerListManager");
+
+                    var spoof = Game.FindFirstChildFromPath("StarterPlayer.StarterPlayerScripts.PlayerModule.ControlModule.VRNavigation");
+                    if (spoof == null || spoof.Self == IntPtr.Zero)
+                        throw new Exception("Failed to find VRNavigation module");
+
+                    string initscript = Executor.GetInitScript();
+                    byte[] bytecode = Executor.Compile(initscript);
+
+                    spoof.UnlockModule();
+                    Bytecodes.SetBytecode(spoof, bytecode);
+
+                    manager.SpoofWith(spoof.Self);
+                    Memory.Write((ulong)Memory.GetBaseAddress().ToInt64() + (ulong)Offsets.FFlags.WebSocketServiceEnableClientCreation, 1);
+
+                    try
                     {
-                        SetForegroundWindow(robloxProcess.MainWindowHandle);
-                        Thread.Sleep(200);
+                        Process robloxProcess = Process.GetProcessById(Memory.ProcessID);
+                        if (robloxProcess.MainWindowHandle != IntPtr.Zero)
+                        {
+                            SetForegroundWindow(robloxProcess.MainWindowHandle);
+                            Thread.Sleep(200);
+                        }
                     }
+                    catch { }
+
+                    VirtualInput.Keyboard.KeyPress(VirtualKeyCode.ESCAPE);
+                    Thread.Sleep(50);
+                    VirtualInput.Keyboard.KeyPress(VirtualKeyCode.ESCAPE);
+                    Thread.Sleep(50);
+                    VirtualInput.Keyboard.KeyPress(VirtualKeyCode.F9);
+
+                    manager.SpoofWith(manager.Self);
+                    File.Delete(initscript);
+
+                    IntPtr consoleWindow = GetConsoleWindow();
+                    if (consoleWindow != IntPtr.Zero)
+                        SetForegroundWindow(consoleWindow);
+                    }
+                else
+                {
+                    throw new Exception("[*] Only supported on windows.");
                 }
-                catch { }
-
-                VirtualInput.Keyboard.KeyPress(VirtualKeyCode.ESCAPE);
-                VirtualInput.Keyboard.KeyPress(VirtualKeyCode.ESCAPE);
-                VirtualInput.Keyboard.KeyPress(VirtualKeyCode.F9);
-
-                manager.SpoofWith(manager.Self);
-                File.Delete(initscript);
-
-                IntPtr consoleWindow = GetConsoleWindow();
-                if (consoleWindow != IntPtr.Zero)
-                    SetForegroundWindow(consoleWindow);
             }
             catch (Exception ex)
             {
@@ -97,34 +108,30 @@ namespace Main
                 throw;
             }
         }
-
-        public void Execute(string source)
+        public async Task Execute(string source)
         {
             try
             {
-                string folderPath = Path.Combine(Path.GetTempPath(), "Oracle Executor");
-                Directory.CreateDirectory(folderPath);
-
-                string timestamp = DateTime.Now.ToString("hh-mmtt_MM-dd-yyyy").ToLower();
-                string raw = Path.Combine(folderPath, timestamp + ".lua");
-
-                File.WriteAllText(raw, source);
+                int pid = Memory.ProcessID;
+                string base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(source));
 
                 var execute = new JObject
                 {
                     ["action"] = "Execute",
-                    ["pid"] = Memory.ProcessID,
-                    ["source"] = source
+                    ["pid"] = pid,
+                    ["source"] = base64
                 };
 
-                BridgeHost.Server.Send(execute, Memory.ProcessID);
+                var response = await BridgeHost.Server.SendAndReceive(execute, pid, 5000);
+                
+                if (response["success"]?.Value<bool>() != true)
+                {
+                    throw new Exception(response["message"]?.ToString() ?? "Execution failed");
+                }
             }
             catch (Exception ex)
             {
                 REPL.REPLPrint($"[ERROR] Execution failed: {ex.Message}");
-                REPL.REPLPrint($"[ERROR] Stack trace: {ex.StackTrace}");
-                if (ex.InnerException != null)
-                    REPL.REPLPrint($"[ERROR] Inner exception: {ex.InnerException.Message}");
                 throw;
             }
         }
@@ -132,12 +139,11 @@ namespace Main
 
     public class Program
     {
-        public static void Main(string[] args)
+        public static async Task Main(string[] args) 
         {
             try
             {
                 Console.Clear();
-                
 
                 BridgeHost.Server = new Websocket("127.0.0.1", 6969);
                 if (!BridgeHost.Server.Run())
@@ -145,6 +151,8 @@ namespace Main
                     REPL.REPLPrint("[FATAL] Failed to start websocket server.");
                     return;
                 }
+
+                Console.Clear();
 
                 int attempts = 0;
                 while (!Memory.Attached())
@@ -232,7 +240,8 @@ namespace Main
                             }
 
                             string source = codeBuilder.ToString().Trim();
-                            Roblox.Execute(source);
+                            await Roblox.Execute(source);
+                            REPL.REPLPrint("[*] Executed code \n");
                         }
                         catch (Exception ex)
                         {
