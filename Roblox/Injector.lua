@@ -71,6 +71,29 @@
 		return pointer
 	end
 
+	function Utils:HttpGet(url, return_raw)
+		assert(type(url) == "string", "invalid argument #1 to 'HttpGet' (string expected, got " .. type(url) .. ") ", 2)
+
+		if return_raw == nil then
+			return_raw = true
+		end
+
+		local response = Enviroment.request({
+			Url = url,
+			Method = "GET",
+		})
+
+		if not response then
+			error("HttpGet failed: Enviroment.request returned nil")
+		end
+
+		if return_raw then
+			return response.Body
+		end
+
+		return HttpService:JSONDecode(response.Body)
+	end
+
 	-- bridge
 	Bridge.on_going_requests = {}
 
@@ -166,28 +189,45 @@
 			return nil, response["message"]
 		end
 
-		local func = require(module)
-
-		if debug.info(func, "n") ~= chunk_name then
+		local ok, func = pcall(require, module)
+		if not ok or type(func) ~= "function" then
 			module:Destroy()
-			return nil, "function does not match"
+			return nil, "module did not return a function"
 		end
 
 		module.Parent = nil
 		return func
 	end
 
+	function Bridge:Request(options)
+		local response = self:SendAndReceive({
+			["action"] = "request",
+			["url"] = options.Url,
+			["method"] = options.Method,
+			["headers"] = options.Headers,
+			["body"] = options.Body
+		})
+
+		if not response["success"] then
+			error(response["message"], 3)
+		end
+
+		return {
+			Success = response.success,
+			StatusCode = response.status_code,
+			StatusMessage = response.status_message,
+			Headers = response.headers,
+			Body = response.body
+		}
+	end
+
 	-- Executing
 	client.MessageReceived:Connect(function(rawData)
-		print("[DEBUG] Received message:", rawData)
-		
 		local success, data = pcall(HttpService.JSONDecode, HttpService, rawData)
 		if not success then 
-			warn("[ERROR] Failed to decode JSON:", data)
+			warn("Failed to decode JSON:", data)
 			return 
 		end
-		
-		print("[DEBUG] Parsed data:", HttpService:JSONEncode(data))
 		
 		local id, action = data.id, data.action
 
@@ -210,7 +250,8 @@
 			
 			if not data.source then
 				resp.message = "Missing source"
-				return sendResponse(resp)
+				sendResponse(resp)
+				return
 			end
 
 			local decoded = Enviroment.base64.decode(data.source)
@@ -227,7 +268,7 @@
 			task.spawn(function()
 				local execSuccess, execErr = pcall(func)
 				if not execSuccess then
-					warn("Execution error:", execErr)
+					warn(execErr)
 				end
 			end)
 			
@@ -243,6 +284,9 @@
 
 	function Enviroment.base64.encode(data)
 		local b = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+		if data == nil then 
+			error("base64.decode expected string, got nil", 2)
+		end
 		return ((data:gsub('.', function(x) 
 			local r,b='',x:byte()
 			for i=8,1,-1 do r=r..(b%2^i-b%2^(i-1)>0 and '1' or '0') end
@@ -257,6 +301,9 @@
 	
 	function Enviroment.base64.decode(data)
 		local b = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+		if data == nil then
+			error("base64.decode expected string, got nil", 2)
+		end
 		data = string.gsub(data, '[^'..b..'=]', '')
 		return (data:gsub('.', function(x)
 			if (x == '=') then return '' end
@@ -323,28 +370,93 @@
 		return _require(modulescript)
 	end
 
-	function Enviroment.loadstring(chunk, chunk_name)
-		local encoded_chunk = Enviroment.base64.encode(chunk) -- encode for sending to C#
+	function Enviroment.request(options)
+		assert(type(options) == "table", "invalid argument #1 to 'request' (table expected, got " .. type(options) .. ") ", 2)
+		assert(type(options.Url) == "string", "invalid option 'Url' for argument #1 to 'request' (string expected, got " .. type(options.Url) .. ") ", 2)
+		options.Method = options.Method or "GET"
+		options.Method = options.Method:upper()
+		assert(table.find({"GET", "POST", "PUT", "PATCH", "DELETE"}, options.Method), "invalid option 'Method' for argument #1 to 'request' (a valid http method expected, got '" .. options.Method .. "') ", 2)
+		assert(not (options.Method == "GET" and options.Body), "invalid option 'Body' for argument #1 to 'request' (current method is GET but option 'Body' was used)", 2)
+		if table.find({"POST", "PUT", "PATCH"}, options.Method) then
+			assert(options.Body, "invalid option 'Body' for argument #1 to 'request' (current method is " .. options.Method .. " but option 'Body' was not provided)", 2)
+		end
+		if options.Body then
+			assert(type(options.Body) == "string", "invalid option 'Body' for argument #1 to 'request' (string expected, got " .. type(options.Body) .. ") ", 2)
+		end
+		options.Headers = options.Headers or {}
+		if options.Headers then assert(type(options.Headers) == "table", "invalid option 'Headers' for argument #1 to 'request' (table expected, got " .. type(options.Url) .. ") ", 2) end
+		options.Headers["User-Agent"] = options.Headers["User-Agent"] or USER_AGENT
+
+		return Bridge:Request(options)
+	end
+
+	local _game = game
+	Enviroment.game = {}
+	setmetatable(Enviroment.game, {
+		__index = function(self, index)
+			if index == "HttpGet" or index == "HttpGetAsync" then
+				return function(self, ...)
+					return Utils:HttpGet(...)
+				end
+			end
+
+			if type(_game[index]) == "function" then
+				return function(self, ...)
+					return _game[index](_game, ...)
+				end
+			end
+
+			return _game[index]
+		end,
+
+		__tostring = function(self)
+			return _game.Name
+		end,
+
+		__metatable = getmetatable(_game)
+	})
+
+	Enviroment.http = {
+		request = Enviroment.request
+	}
+	Enviroment.http_request = Enviroment.request
+
+	function Enviroment.loadstring(chunk, chunk_name_or_use_env)
+		local use_custom_env = false
+		local chunk_name = "=(loadstring)"
+
+		if type(chunk_name_or_use_env) == "string" then
+			chunk_name = chunk_name_or_use_env
+		elseif chunk_name_or_use_env == true then
+			use_custom_env = true
+		end
+
+		local encoded_chunk = Enviroment.base64.encode(chunk)
 		local compile_success, compile_error = Bridge:IsCompilable(encoded_chunk)
 		if not compile_success then
 			return nil, chunk_name .. tostring(compile_error)
 		end
+
 		local func, loadstring_error = Bridge:Loadstring(encoded_chunk, chunk_name)
 		if not func then return nil, loadstring_error end
-		setfenv(func, getfenv(debug.info(2, 'f')))
+
+		if use_custom_env then
+			setfenv(func, getfenv(debug.info(2, 'f')))
+		end
+
 		return func
 	end
 
-	function Enviroment.getexecutorname()
+	function Enviroment.getEnviromentname()
 		return "Oracle"
 	end
 
-	function Enviroment.getexecutorversion()
+	function Enviroment.getEnviromentversion()
 		return "V"..VERSION
 	end
 
-	function Enviroment.identifyexecutor()
-		return Enviroment.getexecutorname(), Enviroment.getexecutorversion()
+	function Enviroment.identifyEnviroment()
+		return Enviroment.getEnviromentname(), Enviroment.getEnviromentversion()
 	end
 
 	function Enviroment.getscriptbytecode(script)

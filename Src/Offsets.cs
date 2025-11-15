@@ -26,7 +26,7 @@ namespace Offsets
      }
     
     public static class FakeDataModel {
-         public static readonly int Pointer = 0x76b46b8;
+         public static readonly int Pointer = 0x76B46B8;
     }
 
     public static class Instance {

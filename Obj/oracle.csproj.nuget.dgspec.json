@@ -50,6 +50,10 @@
               "target": "Package",
               "version": "[2.0.0, )"
             },
+            "ClickableTransparentOverlay": {
+              "target": "Package",
+              "version": "[11.1.0, )"
+            },
             "Fleck": {
               "target": "Package",
               "version": "[1.2.0, )"
@@ -58,9 +62,9 @@
               "target": "Package",
               "version": "[1.5.0, )"
             },
-            "K4os.Compression.LZ4": {
+            "ImGui.NET": {
               "target": "Package",
-              "version": "[1.3.8, )"
+              "version": "[1.91.6.1, )"
             },
             "K4os.Hash.xxHash": {
               "target": "Package",
@@ -70,17 +74,9 @@
               "target": "Package",
               "version": "[13.0.4, )"
             },
-            "WebSocketSharp": {
-              "target": "Package",
-              "version": "[1.0.3-rc11, )"
-            },
             "ZstdNet": {
               "target": "Package",
               "version": "[1.4.5, )"
-            },
-            "xxHashSharp": {
-              "target": "Package",
-              "version": "[1.0.0, )"
             }
           },
           "imports": [

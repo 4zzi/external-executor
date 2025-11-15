@@ -221,60 +221,93 @@ namespace Bridge
 
             AddListener("request", (socket, data) =>
             {
-                string id = data.ContainsKey("id") ? data["id"].ToString() : "";
-                int pid = data.ContainsKey("pid") ? data["pid"].Value<int>() : 0;
-                JObject response = new JObject { ["type"] = "response", ["success"] = false, ["pid"] = pid };
-                if (!string.IsNullOrEmpty(id)) response["id"] = id;
-
-                try
+                Task.Run(async () =>
                 {
-                    if (!data.ContainsKey("url") || !data.ContainsKey("method"))
-                        throw new Exception("Missing required keys: url, method");
-
-                    string url = data["url"].ToString();
-                    string method = data["method"].ToString().ToUpper();
-                    JObject headers = data.ContainsKey("headers") ? data["headers"] as JObject : new JObject();
-                    string body = data.ContainsKey("body") ? data["body"].ToString() : "";
-
-                    string urlPattern = @"^(https?:\/\/(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}|https?:\/\/(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)){3})(:\d{1,5})?(\/[^\s]*)?$";
-                    if (!Regex.IsMatch(url, urlPattern, RegexOptions.IgnoreCase))
-                        throw new Exception("Invalid URL");
-
-                    using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-                    var requestMessage = new HttpRequestMessage(new HttpMethod(method), new Uri(url));
-
-                    foreach (var header in headers)
+                    try
                     {
-                        try { client.DefaultRequestHeaders.Add(header.Key, header.Value.ToString()); }
-                        catch { }
+                        string url =
+                            (data.ContainsKey("url") ? data["url"] :
+                            data.ContainsKey("Url") ? data["Url"] : null)?.ToString();
+
+                        string method =
+                            (data.ContainsKey("method") ? data["method"] :
+                            data.ContainsKey("Method") ? data["Method"] : null)?.ToString();
+
+                        if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(method))
+                            throw new Exception("Missing required keys: url, method");
+
+                        method = method.ToUpperInvariant();
+
+                        string body = "";
+                        if (data.ContainsKey("body")) body = data["body"]?.ToString() ?? "";
+                        else if (data.ContainsKey("Body")) body = data["Body"]?.ToString() ?? "";
+
+                        JObject headers = null;
+                        if (data.ContainsKey("headers"))
+                            headers = data["headers"] as JObject;
+                        else if (data.ContainsKey("Headers"))
+                            headers = data["Headers"] as JObject;
+
+                        if (headers == null || headers.Type == JTokenType.Null)
+                            headers = new JObject();
+
+                        using (var client = new HttpClient())
+                        using (var requestMessage = new HttpRequestMessage(new HttpMethod(method), url))
+                        {
+                            foreach (var pair in headers)
+                            {
+                                string key = pair.Key;
+                                string value = pair.Value?.ToString() ?? "";
+
+                                if (!requestMessage.Headers.TryAddWithoutValidation(key, value))
+                                {
+                                    if (requestMessage.Content == null)
+                                        requestMessage.Content = new StringContent("");
+
+                                    requestMessage.Content.Headers.TryAddWithoutValidation(key, value);
+                                }
+                            }
+
+                            if (method == "POST" || method == "PUT" || method == "PATCH")
+                            {
+                                requestMessage.Content = new StringContent(body ?? "");
+                            }
+
+                            var response = await client.SendAsync(requestMessage);
+                            string responseBody = await response.Content.ReadAsStringAsync();
+
+                            JObject result = new JObject
+                            {
+                                ["type"] = "response",
+                                ["pid"] = data["pid"],
+                                ["id"] = data["id"],
+                                ["success"] = true,
+                                ["status_code"] = (int)response.StatusCode,
+                                ["status_message"] = response.ReasonPhrase,
+                                ["body"] = responseBody,
+                                ["headers"] = JObject.FromObject(
+                                    response.Headers.Concat(response.Content.Headers)
+                                        .ToDictionary(x => x.Key, x => string.Join(",", x.Value))
+                                )
+                            };
+
+                            socket.Send(result.ToString());
+                        }
                     }
-
-                    if (method == "POST" || method == "PUT" || method == "PATCH")
-                        requestMessage.Content = new StringContent(body, Encoding.UTF8, "application/json");
-                    else if (method == "DELETE" && !string.IsNullOrEmpty(body))
-                        requestMessage.Content = new StringContent(body, Encoding.UTF8, "application/json");
-
-                    var httpResponse = client.SendAsync(requestMessage).Result;
-                    string responseBody = httpResponse.Content.ReadAsStringAsync().Result;
-
-                    JObject responseHeaders = new JObject();
-                    foreach (var header in httpResponse.Headers)
-                        responseHeaders[header.Key] = string.Join(", ", header.Value);
-
-                    response["response"] = new JObject
+                    catch (Exception ex)
                     {
-                        ["success"] = httpResponse.IsSuccessStatusCode,
-                        ["status_code"] = (int)httpResponse.StatusCode,
-                        ["status_message"] = httpResponse.ReasonPhrase,
-                        ["headers"] = responseHeaders,
-                        ["body"] = responseBody
-                    };
+                        JObject error = new JObject
+                        {
+                            ["type"] = "response",
+                            ["pid"] = data["pid"],
+                            ["id"] = data["id"],
+                            ["success"] = false,
+                            ["Error"] = ex.Message
+                        };
 
-                    response["success"] = true;
-                }
-                catch (Exception ex) { response["message"] = ex.Message; }
-
-                socket.Send(response.ToString());
+                        socket.Send(error.ToString());
+                    }
+                });
             });
 
             AddListener("loadstring", (socket, data) =>
@@ -306,7 +339,11 @@ namespace Bridge
                         throw new Exception($"Script {scriptName} not found");
 
                     string decodedChunk = Encoding.UTF8.GetString(Convert.FromBase64String(chunk));
-                    string wrappedCode = $"local function {chunkName}(...)\n{decodedChunk}\nend\nreturn {chunkName}";
+                    string wrappedCode = $@"
+                    return function(...)
+                    {decodedChunk}
+                    end
+                    ";
                     string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.lua");
                     File.WriteAllText(tempFile, wrappedCode);
 

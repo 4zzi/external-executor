@@ -1,21 +1,25 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Diagnostics;
-using System.Text;
-using System.Runtime.InteropServices;
-using System.Threading;
-using System.IO;
-using System.Reflection;
-using System.Reflection.Metadata;
-using WindowsInput;
-using RMemory;
-using Offsets;
-using Functions;
-using Client;
-using Luau;
-using Bridge;
-using Newtonsoft.Json.Linq;
+//
+    using System;
+    using System.Collections.Generic;
+    using System.Linq;
+    using System.Diagnostics;
+    using System.Text;
+    using System.Runtime.InteropServices;
+    using System.Threading;
+    using System.IO;
+    using System.Reflection;
+    using System.Reflection.Metadata;
+    using Newtonsoft.Json.Linq;
+//
+//
+    using WindowsInput;
+    using RMemory;
+    using Offsets;
+    using Functions;
+    using Client;
+    using Luau;
+    using Bridge;
+//
 
 namespace Bridge
 {
@@ -28,7 +32,6 @@ namespace Bridge
 namespace Main
 {
     using Bridge;
-
     public class Roblox
     {
         [DllImport("user32.dll")]
@@ -36,13 +39,9 @@ namespace Main
         [DllImport("kernel32.dll")]
         private static extern IntPtr GetConsoleWindow();
 
-        public static RobloxInstance Game = new RobloxInstance(
-            Memory.Read<IntPtr>(
-                Memory.Read<IntPtr>(Memory.GetBaseAddress() + Offsets.FakeDataModel.Pointer)
-                +
-                0x1C0
-            )
-        );
+        public static IntPtr GamePointer = Memory.Read<IntPtr>(Memory.GetBaseAddress() + Offsets.FakeDataModel.Pointer);
+        public static RobloxInstance Game = new RobloxInstance(Memory.Read<IntPtr>(GamePointer + 0x1C0));
+
         public Websocket _server;
 
         public void Inject()
@@ -51,15 +50,18 @@ namespace Main
             {
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
+                    if (Game == null || Game.Self == IntPtr.Zero)
+                        throw new Exception("Failed to get Base Address");
+                       
                     var VirtualInput = new InputSimulator();
                     var manager = Game.FindFirstChildFromPath("CoreGui.RobloxGui.Modules.PlayerList.PlayerListManager");
 
                     if (manager == null || manager.Self == IntPtr.Zero)
-                        throw new Exception("Failed to find PlayerListManager");
+                        throw new Exception("Injection failed");
 
                     var spoof = Game.FindFirstChildFromPath("StarterPlayer.StarterPlayerScripts.PlayerModule.ControlModule.VRNavigation");
                     if (spoof == null || spoof.Self == IntPtr.Zero)
-                        throw new Exception("Failed to find VRNavigation module");
+                        throw new Exception("Injection failed");
 
                     string initscript = Executor.GetInitScript();
                     byte[] bytecode = Executor.Compile(initscript);
@@ -82,17 +84,11 @@ namespace Main
                     catch { }
 
                     VirtualInput.Keyboard.KeyPress(VirtualKeyCode.ESCAPE);
-                    Thread.Sleep(50);
+                    Thread.Sleep(10);
                     VirtualInput.Keyboard.KeyPress(VirtualKeyCode.ESCAPE);
-                    Thread.Sleep(50);
-                    VirtualInput.Keyboard.KeyPress(VirtualKeyCode.F9);
 
                     manager.SpoofWith(manager.Self);
                     File.Delete(initscript);
-
-                    IntPtr consoleWindow = GetConsoleWindow();
-                    if (consoleWindow != IntPtr.Zero)
-                        SetForegroundWindow(consoleWindow);
                 }
                 else
                 {
@@ -108,7 +104,6 @@ namespace Main
                 throw;
             }
         }
-        
         public async Task Execute(string source)
         {
             try
@@ -137,9 +132,17 @@ namespace Main
             }
         }
     }
-
     public class Program
     {
+        public static async Task MonitorProcessAndExit()
+        {
+            Process robloxProcess = Process.GetProcessById(Memory.ProcessID);
+            while (!robloxProcess.HasExited)
+            {
+                await Task.Delay(1000);
+            }
+            Environment.Exit(0);
+        }
         public static async Task Main(string[] args) 
         {
             try
@@ -166,8 +169,6 @@ namespace Main
                     {
                         REPL.REPLPrint("\n[ERROR] Could not find Roblox process after 30 seconds.");
                         REPL.REPLPrint("[*] Please start Roblox and restart the application.");
-                        REPL.REPLPrint("\nPress any key to exit...");
-                        Console.ReadKey();
                         return;
                     }
                 }
@@ -178,7 +179,6 @@ namespace Main
                 var Roblox = new Roblox();
                 Client injectedClient = null;
 
-                // Auto-inject
                 try
                 {
                     Roblox.Inject();
@@ -186,65 +186,25 @@ namespace Main
                     injectedClient = new Client(Memory.ProcessID, BridgeHost.Server);
                     BridgeHost.Server.AddClient(injectedClient);
 
-                    REPL.REPLPrint("[*] Press enter on empty line to execute");
-                    REPL.REPLPrint("[*] Cls to clear console\n");
+                    REPL.REPLPrint("[*] Please keep this console open unless you closed the gui.\n");
+
+                    OracleImGui Executor = new OracleImGui(Roblox);
+
+                    await Executor.Start();
+                    await MonitorProcessAndExit();
                 }
                 catch (Exception ex)
                 {
                     REPL.REPLPrint("[ERROR] Injection failed: " + ex.Message);
                     REPL.REPLPrint("[ERROR] Stack trace: " + ex.StackTrace);
-                    Console.ReadKey();
                     return;
-                }
-
-                while (true)
-                {
-                    Console.Write("> ");
-                    string input = Console.ReadLine()?.Trim();
-
-                    if (string.IsNullOrEmpty(input)) continue;
-                    if (input.Equals("exit", StringComparison.OrdinalIgnoreCase)) break;
-                    if (input.Equals("cls", StringComparison.OrdinalIgnoreCase))
-                    {
-                        Console.Clear();
-                        REPL.REPLPrint("[*] Press enter on empty line to execute");
-                        REPL.REPLPrint("[*] Cls to clear console\n");
-                    }
-
-                    try
-                    {
-                        StringBuilder codeBuilder = new StringBuilder();
-                        codeBuilder.AppendLine(input);
-
-                        int lineNumber = 2;
-                        while (true)
-                        {
-                            Console.Write(new string('>', lineNumber) + " ");
-                            string line = Console.ReadLine();
-                            if (string.IsNullOrEmpty(line)) break;
-
-                            codeBuilder.AppendLine(line);
-                            lineNumber++;
-                        }
-
-                        string source = codeBuilder.ToString().Trim();
-                        await Roblox.Execute(source);
-                        REPL.REPLPrint("------------------\n");
-                    }
-                    catch (Exception ex)
-                    {
-                        REPL.REPLPrint("[ERROR] " + ex.Message + "\n");
-                    }
                 }
             }
             catch (Exception ex)
             {
                 REPL.REPLPrint($"[FATAL ERROR] {ex.Message}");
                 REPL.REPLPrint($"Stack trace: {ex.StackTrace}");
-                Console.ReadKey();
             }
-
-            REPL.REPLPrint("[*] Exiting...\n");
         }
     }
 }
