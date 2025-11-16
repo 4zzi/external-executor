@@ -14,6 +14,7 @@
     <PackageReference Include="Fleck" Version="1.2.0" />
     <PackageReference Include="H.InputSimulator" Version="1.5.0" />
     <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
+    <PackageReference Include="ImGuiColorTextEditNet" Version="0.1.9" />
     <PackageReference Include="K4os.Hash.xxHash" Version="1.0.8" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="ZstdNet" Version="1.4.5" />

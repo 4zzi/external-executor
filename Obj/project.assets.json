@@ -126,6 +126,22 @@
           }
         }
       },
+      "ImGuiColorTextEditNet/0.1.9": {
+        "type": "package",
+        "dependencies": {
+          "ImGui.NET": "1.91.6.1"
+        },
+        "compile": {
+          "lib/net8.0/ImGuiColorTextEditNet.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net8.0/ImGuiColorTextEditNet.dll": {
+            "related": ".xml"
+          }
+        }
+      },
       "K4os.Hash.xxHash/1.0.8": {
         "type": "package",
         "compile": {
@@ -449,6 +465,20 @@
         "runtimes/win-arm64/native/cimgui.dll",
         "runtimes/win-x64/native/cimgui.dll",
         "runtimes/win-x86/native/cimgui.dll"
+      ]
+    },
+    "ImGuiColorTextEditNet/0.1.9": {
+      "sha512": "DQtY3OnQp5ye2t3vN6c0Ksgu2hNTcUJEBUQFWLbF0yOwQZdhXb9DxD1HPMthejtvKPmrTOyqqQXTDgwprs0RbQ==",
+      "type": "package",
+      "path": "imguicolortexteditnet/0.1.9",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "README.md",
+        "imguicolortexteditnet.0.1.9.nupkg.sha512",
+        "imguicolortexteditnet.nuspec",
+        "lib/net8.0/ImGuiColorTextEditNet.dll",
+        "lib/net8.0/ImGuiColorTextEditNet.xml"
       ]
     },
     "K4os.Hash.xxHash/1.0.8": {
@@ -784,6 +814,7 @@
       "Fleck >= 1.2.0",
       "H.InputSimulator >= 1.5.0",
       "ImGui.NET >= 1.91.6.1",
+      "ImGuiColorTextEditNet >= 0.1.9",
       "K4os.Hash.xxHash >= 1.0.8",
       "Newtonsoft.Json >= 13.0.4",
       "ZstdNet >= 1.4.5"
@@ -795,21 +826,19 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "I:\\Download\\visual studio stuff\\cs\\Oracle\\oracle.csproj",
+      "projectUniqueName": "C:\\Users\\Admin\\Downloads\\bi\\external-executor\\oracle.csproj",
       "projectName": "oracle",
-      "projectPath": "I:\\Download\\visual studio stuff\\cs\\Oracle\\oracle.csproj",
+      "projectPath": "C:\\Users\\Admin\\Downloads\\bi\\external-executor\\oracle.csproj",
       "packagesPath": "C:\\Users\\Admin\\.nuget\\packages\\",
-      "outputPath": "I:\\Download\\visual studio stuff\\cs\\Oracle\\obj\\",
+      "outputPath": "C:\\Users\\Admin\\Downloads\\bi\\external-executor\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
-        "C:\\Users\\Admin\\AppData\\Roaming\\NuGet\\NuGet.Config",
-        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        "C:\\Users\\Admin\\AppData\\Roaming\\NuGet\\NuGet.Config"
       ],
       "originalTargetFrameworks": [
         "net8.0"
       ],
       "sources": {
-        "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
@@ -828,7 +857,7 @@
         "auditLevel": "low",
         "auditMode": "direct"
       },
-      "SdkAnalysisLevel": "9.0.300"
+      "SdkAnalysisLevel": "10.0.100"
     },
     "frameworks": {
       "net8.0": {
@@ -854,6 +883,10 @@
             "target": "Package",
             "version": "[1.91.6.1, )"
           },
+          "ImGuiColorTextEditNet": {
+            "target": "Package",
+            "version": "[0.1.9, )"
+          },
           "K4os.Hash.xxHash": {
             "target": "Package",
             "version": "[1.0.8, )"
@@ -878,12 +911,30 @@
         ],
         "assetTargetFallback": true,
         "warn": true,
+        "downloadDependencies": [
+          {
+            "name": "Microsoft.AspNetCore.App.Ref",
+            "version": "[8.0.22, 8.0.22]"
+          },
+          {
+            "name": "Microsoft.NETCore.App.Host.win-x64",
+            "version": "[8.0.22, 8.0.22]"
+          },
+          {
+            "name": "Microsoft.NETCore.App.Ref",
+            "version": "[8.0.22, 8.0.22]"
+          },
+          {
+            "name": "Microsoft.WindowsDesktop.App.Ref",
+            "version": "[8.0.22, 8.0.22]"
+          }
+        ],
         "frameworkReferences": {
           "Microsoft.NETCore.App": {
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.306/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.100/PortableRuntimeIdentifierGraph.json"
       }
     }
   }

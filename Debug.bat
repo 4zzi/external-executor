@@ -8,6 +8,6 @@ if %errorlevel% neq 0 (
     exit /b
 )
 
-cd /d "I:\Download\visual studio stuff\cs\Oracle\"
+cd C:\Users\Admin\Downloads\bi\external-executor
 dotnet run --configuration Debug
 pause
