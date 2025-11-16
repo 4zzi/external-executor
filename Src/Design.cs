@@ -15,10 +15,12 @@ public class OracleImGui : Overlay
     private string _scriptsFolder;
     private Main.Roblox _roblox;
     private bool _showSettings = false;
-    private bool _topmost = false;
+    private bool _topmost = true;
     private bool _highlightLuau = true;
+    private float _editorScrollY = 0f;
     private int _caretIndex = 0;
     private int _selectionStart = -1;
+    private const string _defaultCode = "print(\"labubu 67\")";
 
     [DllImport("user32.dll")]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
@@ -34,7 +36,7 @@ public class OracleImGui : Overlay
     public OracleImGui(Main.Roblox roblox) : base(1920, 1080)
     {
         _roblox = roblox;
-        _tabs.Add(new ScriptTab { Name = "Script 1", Content = "" });
+        _tabs.Add(new ScriptTab { Name = "Script 1", Content = _defaultCode });
 
         string exeFolder = AppContext.BaseDirectory;
         string workspacePath = Path.Combine(exeFolder, "workspace");
@@ -195,7 +197,8 @@ public class OracleImGui : Overlay
                     SetTopmost(_topmost);
             }
             ImGui.Spacing();
-            if (ImGui.Checkbox("Syntax Highlight Luau", ref _highlightLuau)) { }
+            
+            _highlightLuau = true;
             ImGui.Spacing();
             ImGui.Separator();
             ImGui.Spacing();
@@ -220,7 +223,9 @@ public class OracleImGui : Overlay
             string[] lines = content.Split('\n');
 
             ImGui.BeginChild("Lines", new Vector2(lineWidth, 0), ImGuiChildFlags.None, ImGuiWindowFlags.NoScrollbar);
-            float scrollY = ImGui.GetScrollY();
+            // Apply last-known TextBox scroll so line numbers follow the editor.
+            ImGui.SetScrollY(_editorScrollY);
+            float scrollY = _editorScrollY;
             for (int i = 0; i < lines.Length; i++)
                 ImGui.TextUnformatted((i + 1).ToString());
             ImGui.EndChild();
@@ -228,7 +233,8 @@ public class OracleImGui : Overlay
             ImGui.SameLine();
 
             ImGui.BeginChild("TextBox", new Vector2(0, 0), ImGuiChildFlags.None, ImGuiWindowFlags.HorizontalScrollbar);
-            ImGui.SetScrollY(scrollY); // sync editor to line numbers
+            // Ensure TextBox uses the same scroll we applied to Lines (keeps sync across frames)
+            ImGui.SetScrollY(scrollY);
 
                 var dl = ImGui.GetWindowDrawList();
                 var childPos = ImGui.GetCursorScreenPos();
@@ -239,8 +245,19 @@ public class OracleImGui : Overlay
                 // Make the underlying input text invisible so only our colored overlay is visible,
                 // then draw colored tokens slightly offset to the right for better visibility.
                 ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0, 0, 0, 0));
+                // capture previous content to detect large paste operations
+                string _oldContent = content;
                 ImGui.InputTextMultiline("##code", ref content, 100000, ImGui.GetContentRegionAvail(), ImGuiInputTextFlags.AllowTabInput);
                 ImGui.PopStyleColor();
+
+                // If content changed significantly (likely pasted), ensure view scrolls to show new content
+                if (content != _oldContent && Math.Abs(content.Length - _oldContent.Length) > 1)
+                {
+                    ImGui.SetScrollY(ImGui.GetScrollMaxY());
+                }
+
+                // Capture the actual TextBox scroll so the Lines child will use it next frame.
+                _editorScrollY = ImGui.GetScrollY();
 
                 // Draw colored foreground tokens on top of the input text so colors overwrite the default white.
                 RenderHighlightedLuaForeground(content, childPos, avail, dl);

@@ -8,6 +8,7 @@ using System.IO;
 using System.Net.Http;
 using Newtonsoft.Json.Linq;
 using Fleck;
+using System.Runtime.InteropServices;
 //
 using Functions;
 using Client;
@@ -18,6 +19,62 @@ namespace Bridge
 {
     public class Websocket
     {
+        // Simple in-memory console storage per bridge process
+        private readonly Dictionary<string, List<string>> _consoles = new();
+        private readonly Dictionary<int, string> _clientDefaultConsole = new();
+        // Native clipboard helpers (avoid depending on System.Windows.Forms)
+        private const uint CF_UNICODETEXT = 13;
+        private const uint GMEM_MOVEABLE = 0x0002;
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr GlobalAlloc(uint uFlags, UIntPtr dwBytes);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr GlobalLock(IntPtr hMem);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GlobalUnlock(IntPtr hMem);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool OpenClipboard(IntPtr hWndNewOwner);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool CloseClipboard();
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr SetClipboardData(uint uFormat, IntPtr hMem);
+
+        private static bool SetClipboardText(string text)
+        {
+            if (text == null) return false;
+            // Encode as UTF-16LE with terminating null
+            var bytes = Encoding.Unicode.GetBytes(text + "\0");
+            UIntPtr size = (UIntPtr)bytes.Length;
+            IntPtr hGlobal = GlobalAlloc(GMEM_MOVEABLE, size);
+            if (hGlobal == IntPtr.Zero) return false;
+
+            IntPtr target = GlobalLock(hGlobal);
+            if (target == IntPtr.Zero) return false;
+            try
+            {
+                Marshal.Copy(bytes, 0, target, bytes.Length);
+            }
+            finally
+            {
+                GlobalUnlock(hGlobal);
+            }
+
+            if (!OpenClipboard(IntPtr.Zero)) return false;
+            try
+            {
+                var res = SetClipboardData(CF_UNICODETEXT, hGlobal);
+                return res != IntPtr.Zero;
+            }
+            finally
+            {
+                CloseClipboard();
+            }
+        }
         private readonly string _host;
         private readonly int _port;
         private IWebSocketServer _server;
@@ -187,24 +244,61 @@ namespace Bridge
 
         private void SetupListeners()
         {
+            // Resolve base directory and enforce workspace boundaries for mutating filesystem ops
+            string _baseDirForWorkspace = AppContext.BaseDirectory ?? AppDomain.CurrentDomain.BaseDirectory;
+            string _workspaceRoot = Path.GetFullPath(Path.Combine(_baseDirForWorkspace, "workspace"));
+
+            string ResolveAndValidateWorkspacePath(string path)
+            {
+                if (string.IsNullOrEmpty(path)) throw new Exception("Missing required key: path");
+                string fullPath = Path.IsPathRooted(path) ? Path.GetFullPath(path) : Path.GetFullPath(Path.Combine(_baseDirForWorkspace, path));
+                // Allow the workspace root itself or any path under it
+                if (!fullPath.Equals(_workspaceRoot, StringComparison.OrdinalIgnoreCase) &&
+                    !fullPath.StartsWith(_workspaceRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new Exception("Operation not allowed outside workspace");
+                }
+
+                return fullPath;
+            }
             AddListener("initialize", (socket, data) =>
             {
                 int pid = data.ContainsKey("pid") ? data["pid"].Value<int>() : 0;
                 AddConnection(socket, pid);
+                // Ensure a workspace directory exists next to the running executable.
+                try
+                {
+                    string baseDir = AppContext.BaseDirectory ?? AppDomain.CurrentDomain.BaseDirectory;
+                    string workspaceRoot = Path.Combine(baseDir, "workspace");
+                    Directory.CreateDirectory(workspaceRoot);
+                }
+                catch { }
+
                 OnInitialized?.Invoke(pid);
             });
 
             AddListener("is_compilable", (socket, data) =>
             {
-                string id = data.ContainsKey("id") ? data["id"].ToString() : "";
-                int pid = data.ContainsKey("pid") ? data["pid"].Value<int>() : 0;
+                string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
+                int pid = (data.ContainsKey("pid") && data["pid"] != null) ? data["pid"].Value<int>() : 0;
                 JObject response = new JObject { ["type"] = "response", ["success"] = false, ["pid"] = pid };
                 if (!string.IsNullOrEmpty(id)) response["id"] = id;
 
                 try
                 {
                     if (!data.ContainsKey("source")) throw new Exception("Missing required key: source");
-                    string decodedSource = Encoding.UTF8.GetString(Convert.FromBase64String(data["source"].ToString()));
+                    // source is base64 encoded; decode to bytes first so we can detect bytecode
+                    byte[] raw = Convert.FromBase64String(data["source"].ToString());
+
+                    // If the payload looks like Lua bytecode (starts with 0x1B 'L' 'u' 'a'), reject it as not compilable
+                    if (raw.Length >= 4 && raw[0] == 0x1B && raw[1] == (byte)'L' && raw[2] == (byte)'u' && raw[3] == (byte)'a')
+                    {
+                        response["message"] = "source appears to be bytecode, not compilable";
+                        socket.Send(response.ToString());
+                        return;
+                    }
+
+                    string decodedSource = Encoding.UTF8.GetString(raw);
                     string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.lua");
                     File.WriteAllText(tempFile, decodedSource);
                     try
@@ -310,6 +404,93 @@ namespace Bridge
                 });
             });
 
+            // Convenience endpoints for base64 operations so clients can offload encoding/decoding
+            AddListener("base64_encode", (socket, data) =>
+            {
+                string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
+                int pid = (data.ContainsKey("pid") && data["pid"] != null) ? data["pid"].Value<int>() : 0;
+                JObject response = new JObject { ["type"] = "response", ["success"] = false, ["pid"] = pid };
+                if (!string.IsNullOrEmpty(id)) response["id"] = id;
+
+                try
+                {
+                    string text = (data.ContainsKey("text") && data["text"] != null) ? data["text"].ToString() : null;
+                    if (text == null) throw new Exception("Missing required key: text");
+
+                    string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(text));
+                    response["success"] = true;
+                    response["b64"] = b64;
+                }
+                catch (Exception ex)
+                {
+                    response["message"] = ex.Message;
+                }
+
+                socket.Send(response.ToString());
+            });
+
+            AddListener("base64_decode", (socket, data) =>
+            {
+                string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
+                int pid = (data.ContainsKey("pid") && data["pid"] != null) ? data["pid"].Value<int>() : 0;
+                JObject response = new JObject { ["type"] = "response", ["success"] = false, ["pid"] = pid };
+                if (!string.IsNullOrEmpty(id)) response["id"] = id;
+
+                try
+                {
+                    string b64 = (data.ContainsKey("b64") && data["b64"] != null) ? data["b64"].ToString() : null;
+                    if (b64 == null) throw new Exception("Missing required key: b64");
+
+                    byte[] raw = Convert.FromBase64String(b64);
+                    string text = Encoding.UTF8.GetString(raw);
+                    response["success"] = true;
+                    response["text"] = text;
+                }
+                catch (Exception ex)
+                {
+                    response["message"] = ex.Message;
+                }
+
+                socket.Send(response.ToString());
+            });
+
+            // Set clipboard text on host machine (runs on STA thread)
+            AddListener("setclipboard", (socket, data) =>
+            {
+                string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
+                int pid = (data.ContainsKey("pid") && data["pid"] != null) ? data["pid"].Value<int>() : 0;
+                JObject response = new JObject { ["type"] = "response", ["success"] = false, ["pid"] = pid };
+                if (!string.IsNullOrEmpty(id)) response["id"] = id;
+
+                try
+                {
+                    var token = data.ContainsKey("text") ? data["text"] : null;
+                    if (token == null) throw new Exception("Missing required key: text");
+                    string text = token.ToString();
+
+                    // Use native clipboard helper to avoid dependency on System.Windows.Forms
+                    var thread = new System.Threading.Thread(() =>
+                    {
+                        try
+                        {
+                            SetClipboardText(text);
+                        }
+                        catch { }
+                    });
+                    thread.SetApartmentState(System.Threading.ApartmentState.STA);
+                    thread.Start();
+                    thread.Join();
+
+                    response["success"] = true;
+                }
+                catch (Exception ex)
+                {
+                    response["message"] = ex.Message;
+                }
+
+                socket.Send(response.ToString());
+            });
+
             AddListener("loadstring", (socket, data) =>
             {
                 string id = data.ContainsKey("id") ? data["id"].ToString() : "";
@@ -338,12 +519,22 @@ namespace Bridge
                     if (moduleScript == null || moduleScript.Self == IntPtr.Zero)
                         throw new Exception($"Script {scriptName} not found");
 
-                    string decodedChunk = Encoding.UTF8.GetString(Convert.FromBase64String(chunk));
+                    byte[] raw = Convert.FromBase64String(chunk);
+
+                    // Reject if this looks like bytecode
+                    if (raw.Length >= 4 && raw[0] == 0x1B && raw[1] == (byte)'L' && raw[2] == (byte)'u' && raw[3] == (byte)'a')
+                    {
+                        response["message"] = "chunk appears to be bytecode, cannot loadstring";
+                        socket.Send(response.ToString());
+                        return;
+                    }
+
+                    string decodedChunk = Encoding.UTF8.GetString(raw);
                     string wrappedCode = $@"
-                    return function(...)
-                    {decodedChunk}
-                    end
-                    ";
+return function(...)
+{decodedChunk}
+end
+";
                     string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.lua");
                     File.WriteAllText(tempFile, wrappedCode);
 
@@ -353,13 +544,150 @@ namespace Bridge
                         if (bytecode == null || bytecode.Length == 0)
                             throw new Exception("Compilation failed");
 
+                        // compiled successfully
+
                         moduleScript.UnlockModule();
                         Bytecodes.SetBytecode(moduleScript, bytecode);
                         response["success"] = true;
                     }
-                    finally { }
+                    finally { if (File.Exists(tempFile)) File.Delete(tempFile); }
                 }
                 catch (Exception ex) { response["message"] = ex.Message; }
+
+                socket.Send(response.ToString());
+            });
+
+            // rconsole handlers: create/print/clear/destroy/input/settitle
+            AddListener("rconsolecreate", (socket, data) =>
+            {
+                string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
+                int pid = (data.ContainsKey("pid") && data["pid"] != null) ? data["pid"].Value<int>() : 0;
+                JObject response = new JObject { ["type"] = "response", ["success"] = false, ["pid"] = pid };
+                if (!string.IsNullOrEmpty(id)) response["id"] = id;
+
+                try
+                {
+                    string title = (data.ContainsKey("title") && data["title"] != null) ? data["title"].ToString() : "";
+                    string consoleId = Guid.NewGuid().ToString();
+                    _consoles[consoleId] = new List<string>();
+                    // store default console for this client
+                    if (pid != 0) _clientDefaultConsole[pid] = consoleId;
+                    response["success"] = true;
+                    response["console_id"] = consoleId;
+                }
+                catch (Exception ex) { response["message"] = ex.Message; }
+
+                socket.Send(response.ToString());
+            });
+
+            AddListener("rconsoleprint", (socket, data) =>
+            {
+                string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
+                int pid = (data.ContainsKey("pid") && data["pid"] != null) ? data["pid"].Value<int>() : 0;
+                JObject response = new JObject { ["type"] = "response", ["success"] = false, ["pid"] = pid };
+                if (!string.IsNullOrEmpty(id)) response["id"] = id;
+
+                try
+                {
+                    string text = (data.ContainsKey("text") && data["text"] != null) ? data["text"].ToString() : "";
+                    // If text is empty or null, do nothing but return success
+                    if (string.IsNullOrEmpty(text)) { response["success"] = true; socket.Send(response.ToString()); return; }
+
+                    string consoleId = null;
+                    if (data.ContainsKey("console_id") && data["console_id"] != null) consoleId = data["console_id"].ToString();
+                    if (string.IsNullOrEmpty(consoleId) && pid != 0 && _clientDefaultConsole.TryGetValue(pid, out var def)) consoleId = def;
+                    if (string.IsNullOrEmpty(consoleId))
+                    {
+                        // create a console automatically
+                        consoleId = Guid.NewGuid().ToString();
+                        _consoles[consoleId] = new List<string>();
+                        if (pid != 0) _clientDefaultConsole[pid] = consoleId;
+                    }
+
+                    if (!_consoles.ContainsKey(consoleId)) _consoles[consoleId] = new List<string>();
+                    _consoles[consoleId].Add(text);
+
+                    // mirror to host console omitted
+
+                    response["success"] = true;
+                }
+                catch (Exception ex) { response["message"] = ex.Message; }
+
+                socket.Send(response.ToString());
+            });
+
+            AddListener("rconsoleclear", (socket, data) =>
+            {
+                string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
+                int pid = (data.ContainsKey("pid") && data["pid"] != null) ? data["pid"].Value<int>() : 0;
+                JObject response = new JObject { ["type"] = "response", ["success"] = false, ["pid"] = pid };
+                if (!string.IsNullOrEmpty(id)) response["id"] = id;
+
+                try
+                {
+                    string consoleId = (data.ContainsKey("console_id") && data["console_id"] != null) ? data["console_id"].ToString() : null;
+                    if (string.IsNullOrEmpty(consoleId) && pid != 0 && _clientDefaultConsole.TryGetValue(pid, out var def)) consoleId = def;
+                    if (!string.IsNullOrEmpty(consoleId) && _consoles.ContainsKey(consoleId)) _consoles[consoleId].Clear();
+                    response["success"] = true;
+                }
+                catch (Exception ex) { response["message"] = ex.Message; }
+
+                socket.Send(response.ToString());
+            });
+
+            AddListener("rconsoledestroy", (socket, data) =>
+            {
+                string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
+                int pid = (data.ContainsKey("pid") && data["pid"] != null) ? data["pid"].Value<int>() : 0;
+                JObject response = new JObject { ["type"] = "response", ["success"] = false, ["pid"] = pid };
+                if (!string.IsNullOrEmpty(id)) response["id"] = id;
+
+                try
+                {
+                    string consoleId = (data.ContainsKey("console_id") && data["console_id"] != null) ? data["console_id"].ToString() : null;
+                    if (string.IsNullOrEmpty(consoleId) && pid != 0 && _clientDefaultConsole.TryGetValue(pid, out var def)) consoleId = def;
+                    if (!string.IsNullOrEmpty(consoleId) && _consoles.ContainsKey(consoleId)) _consoles.Remove(consoleId);
+                    if (pid != 0 && _clientDefaultConsole.ContainsKey(pid) && _clientDefaultConsole[pid] == consoleId) _clientDefaultConsole.Remove(pid);
+                    response["success"] = true;
+                }
+                catch (Exception ex) { response["message"] = ex.Message; }
+
+                socket.Send(response.ToString());
+            });
+
+            AddListener("rconsolesettitle", (socket, data) =>
+            {
+                string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
+                int pid = (data.ContainsKey("pid") && data["pid"] != null) ? data["pid"].Value<int>() : 0;
+                JObject response = new JObject { ["type"] = "response", ["success"] = false, ["pid"] = pid };
+                if (!string.IsNullOrEmpty(id)) response["id"] = id;
+
+                try
+                {
+                    string title = (data.ContainsKey("title") && data["title"] != null) ? data["title"].ToString() : "";
+                    string consoleId = (data.ContainsKey("console_id") && data["console_id"] != null) ? data["console_id"].ToString() : null;
+                    if (string.IsNullOrEmpty(consoleId) && pid != 0 && _clientDefaultConsole.TryGetValue(pid, out var def)) consoleId = def;
+                    // We don't store title separately in this simple impl, but accept the call
+                    response["success"] = true;
+                }
+                catch (Exception ex) { response["message"] = ex.Message; }
+
+                socket.Send(response.ToString());
+            });
+
+            AddListener("rconsoleinput", (socket, data) =>
+            {
+                string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
+                int pid = (data.ContainsKey("pid") && data["pid"] != null) ? data["pid"].Value<int>() : 0;
+                JObject response = new JObject { ["type"] = "response", ["success"] = true, ["pid"] = pid };
+                if (!string.IsNullOrEmpty(id)) response["id"] = id;
+
+                try
+                {
+                    // We don't support interactive input; return empty string
+                    response["text"] = "";
+                }
+                catch (Exception ex) { response["message"] = ex.Message; response["success"] = false; }
 
                 socket.Send(response.ToString());
             });
@@ -373,9 +701,6 @@ namespace Bridge
 
                 try
                 {
-                    if (!data.ContainsKey("pointer_name")) throw new Exception("Missing required key: pointer_name");
-
-                    string pointerName = data["pointer_name"].ToString();
                     Client client = FindClientByProcessId(pid);
                     if (client == null) throw new Exception($"Failed to find client {pid}");
 
@@ -384,15 +709,75 @@ namespace Bridge
                     if (robloxReplicatedStorage == null || robloxReplicatedStorage.Self == IntPtr.Zero)
                         throw new Exception("RobloxReplicatedStorage not found");
 
-                    var pointer = robloxReplicatedStorage.FindFirstChildFromPath($"Executor.Objects.{pointerName}");
-                    if (pointer == null || pointer.Self == IntPtr.Zero)
-                        throw new Exception($"Pointer '{pointerName}' not found");
+                    RobloxInstance? scriptInstance = null;
 
-                    IntPtr scriptPtr = Memory.Read<IntPtr>((nint)pointer.Self + 0x48);
-                    if (scriptPtr == IntPtr.Zero) throw new Exception("Script pointer is null");
+                    // If caller provided a script_path, locate the instance from the game root
+                    if (data.ContainsKey("script_path"))
+                    {
+                        var token = data["script_path"];
+                        if (token == null) throw new Exception("script_path was provided but null");
+                        string scriptPath = token.ToString();
+                        var found = game.FindFirstChildFromPath(scriptPath);
+                        if (found != null && found.Self != IntPtr.Zero)
+                            scriptInstance = new RobloxInstance(found.Self);
+                        else
+                            throw new Exception($"Script not found at path: {scriptPath}");
+                    }
+                    else
+                    {
+                        if (!data.ContainsKey("pointer_name")) throw new Exception("Missing required key: pointer_name");
 
-                    var script = new RobloxInstance(scriptPtr);
-                    byte[] bytecode = Bytecodes.GetBytecode(script);
+                        var ptoken = data["pointer_name"];
+                        if (ptoken == null) throw new Exception("pointer_name was provided but null");
+                        string pointerName = ptoken.ToString();
+                        var pointer = robloxReplicatedStorage.FindFirstChildFromPath($"Oracle.Objects.{pointerName}");
+                        // Retry a few times in case replication is delayed
+                        int retries = 8;
+                        int delayMs = 100;
+                        int attempt = 0;
+                        while ((pointer == null || pointer.Self == IntPtr.Zero) && attempt < retries)
+                        {
+                            attempt++;
+                            System.Threading.Thread.Sleep(delayMs);
+                            pointer = robloxReplicatedStorage.FindFirstChildFromPath($"Oracle.Objects.{pointerName}");
+                        }
+                        if (pointer == null || pointer.Self == IntPtr.Zero)
+                        {
+                            throw new Exception($"Pointer '{pointerName}' not found");
+                        }
+
+                        // The ObjectValue.Value field offset can vary by build; try multiple candidate offsets.
+                        IntPtr scriptPtr = IntPtr.Zero;
+                        int[] candidateOffsets = new int[] { 0x40, 0x48, 0x50, 0x58, 0x60 };
+                        foreach (var off in candidateOffsets)
+                        {
+                            try
+                            {
+                                var cand = Memory.Read<IntPtr>((nint)pointer.Self + off);
+                                if (cand != IntPtr.Zero)
+                                {
+                                    var candInst = new RobloxInstance(cand);
+                                    if (candInst && (candInst.ClassName == "ModuleScript" || candInst.ClassName == "LocalScript"))
+                                    {
+                                        scriptPtr = cand;
+                                        break;
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
+
+                        if (scriptPtr == IntPtr.Zero) {
+                            throw new Exception("Script pointer is null");
+                        }
+
+                        scriptInstance = new RobloxInstance(scriptPtr);
+                    }
+
+                    if (scriptInstance == null || scriptInstance.Self == IntPtr.Zero)
+                        throw new Exception("Script instance not found or invalid");
+
+                    byte[] bytecode = Bytecodes.GetBytecode(scriptInstance);
 
                     response["bytecode"] = Convert.ToBase64String(bytecode);
                     response["success"] = true;
@@ -411,9 +796,6 @@ namespace Bridge
 
                 try
                 {
-                    if (!data.ContainsKey("pointer_name")) throw new Exception("Missing required key: pointer_name");
-
-                    string pointerName = data["pointer_name"].ToString();
                     Client client = FindClientByProcessId(pid);
                     if (client == null) throw new Exception($"Failed to find client {pid}");
 
@@ -422,15 +804,291 @@ namespace Bridge
                     if (robloxReplicatedStorage == null || robloxReplicatedStorage.Self == IntPtr.Zero)
                         throw new Exception("RobloxReplicatedStorage not found");
 
-                    var pointer = robloxReplicatedStorage.FindFirstChildFromPath($"Executor.Objects.{pointerName}");
-                    if (pointer == null || pointer.Self == IntPtr.Zero)
-                        throw new Exception($"Pointer '{pointerName}' not found");
+                    RobloxInstance? moduleInstance = null;
 
-                    IntPtr moduleScriptPtr = Memory.Read<IntPtr>((nint)pointer.Self + 0x48);
-                    if (moduleScriptPtr == IntPtr.Zero) throw new Exception("ModuleScript pointer is null");
+                    if (data.ContainsKey("script_path"))
+                    {
+                        var token = data["script_path"];
+                        if (token == null) throw new Exception("script_path was provided but null");
+                        string scriptPath = token.ToString();
+                        var found = game.FindFirstChildFromPath(scriptPath);
+                        if (found != null && found.Self != IntPtr.Zero)
+                            moduleInstance = new RobloxInstance(found.Self);
+                        else
+                            throw new Exception($"Script not found at path: {scriptPath}");
+                    }
+                    else
+                    {
+                        if (!data.ContainsKey("pointer_name")) throw new Exception("Missing required key: pointer_name");
 
-                    var moduleScript = new RobloxInstance(moduleScriptPtr);
-                    moduleScript.UnlockModule();
+                        var ptoken = data["pointer_name"];
+                        if (ptoken == null) throw new Exception("pointer_name was provided but null");
+                        string pointerName = ptoken.ToString();
+                        var pointer = robloxReplicatedStorage.FindFirstChildFromPath($"Oracle.Objects.{pointerName}");
+                        // Retry a few times in case replication is delayed
+                        int retries2 = 8;
+                        int delayMs2 = 100;
+                        int attempt2 = 0;
+                        while ((pointer == null || pointer.Self == IntPtr.Zero) && attempt2 < retries2)
+                        {
+                            attempt2++;
+                            System.Threading.Thread.Sleep(delayMs2);
+                            pointer = robloxReplicatedStorage.FindFirstChildFromPath($"Oracle.Objects.{pointerName}");
+                        }
+                        if (pointer == null || pointer.Self == IntPtr.Zero)
+                        {
+                            throw new Exception($"Pointer '{pointerName}' not found");
+                        }
+
+                        // Try multiple offsets for ObjectValue.Value like above
+                        IntPtr moduleScriptPtr = IntPtr.Zero;
+                        int[] offsets2 = new int[] { 0x40, 0x48, 0x50, 0x58, 0x60 };
+                        foreach (var off in offsets2)
+                        {
+                            try
+                            {
+                                var cand = Memory.Read<IntPtr>((nint)pointer.Self + off);
+                                if (cand != IntPtr.Zero)
+                                {
+                                    var candInst = new RobloxInstance(cand);
+                                    if (candInst && candInst.ClassName == "ModuleScript")
+                                    {
+                                        moduleScriptPtr = cand;
+                                        break;
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
+
+                        if (moduleScriptPtr == IntPtr.Zero)
+                        {
+                            throw new Exception("ModuleScript pointer is null");
+                        }
+
+                        moduleInstance = new RobloxInstance(moduleScriptPtr);
+                    }
+
+                    if (moduleInstance == null || moduleInstance.Self == IntPtr.Zero)
+                        throw new Exception("ModuleScript instance not found or invalid");
+
+                    moduleInstance.UnlockModule();
+                    response["success"] = true;
+                }
+                catch (Exception ex) { response["message"] = ex.Message; }
+
+                socket.Send(response.ToString());
+            });
+
+            // Filesystem helpers exposed to injected clients
+            AddListener("readfile", (socket, data) =>
+            {
+                string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
+                int pid = (data.ContainsKey("pid") && data["pid"] != null) ? data["pid"].Value<int>() : 0;
+                JObject response = new JObject { ["type"] = "response", ["success"] = false, ["pid"] = pid };
+                if (!string.IsNullOrEmpty(id)) response["id"] = id;
+
+                try
+                {
+                    string path = (data.ContainsKey("path") && data["path"] != null) ? data["path"].ToString() : null;
+                    // default to workspace root when path is omitted
+                    string fullPath;
+                    if (string.IsNullOrEmpty(path) || path == ".")
+                        fullPath = _workspaceRoot;
+                    else
+                        fullPath = ResolveAndValidateWorkspacePath(path);
+
+                    if (!File.Exists(fullPath)) throw new Exception("file not found");
+
+                    string text = File.ReadAllText(fullPath);
+                    response["text"] = text;
+                    response["success"] = true;
+                }
+                catch (Exception ex) { response["message"] = ex.Message; }
+
+                socket.Send(response.ToString());
+            });
+
+            AddListener("writefile", (socket, data) =>
+            {
+                string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
+                int pid = (data.ContainsKey("pid") && data["pid"] != null) ? data["pid"].Value<int>() : 0;
+                JObject response = new JObject { ["type"] = "response", ["success"] = false, ["pid"] = pid };
+                if (!string.IsNullOrEmpty(id)) response["id"] = id;
+
+                try
+                {
+                    string path = (data.ContainsKey("path") && data["path"] != null) ? data["path"].ToString() : null;
+                    string text = (data.ContainsKey("text") && data["text"] != null) ? data["text"].ToString() : null;
+                    if (path == null) throw new Exception("Missing required key: path");
+                    if (text == null) throw new Exception("Missing required key: text");
+
+                    string fullPath = ResolveAndValidateWorkspacePath(path);
+
+                    var dir = Path.GetDirectoryName(fullPath);
+                    if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+
+                    File.WriteAllText(fullPath, text);
+                    response["success"] = true;
+                }
+                catch (Exception ex) { response["message"] = ex.Message; }
+
+                socket.Send(response.ToString());
+            });
+
+            AddListener("appendfile", (socket, data) =>
+            {
+                string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
+                int pid = (data.ContainsKey("pid") && data["pid"] != null) ? data["pid"].Value<int>() : 0;
+                JObject response = new JObject { ["type"] = "response", ["success"] = false, ["pid"] = pid };
+                if (!string.IsNullOrEmpty(id)) response["id"] = id;
+
+                try
+                {
+                    string path = (data.ContainsKey("path") && data["path"] != null) ? data["path"].ToString() : null;
+                    string text = (data.ContainsKey("text") && data["text"] != null) ? data["text"].ToString() : null;
+                    if (path == null) throw new Exception("Missing required key: path");
+                    if (text == null) throw new Exception("Missing required key: text");
+
+                    string fullPath = ResolveAndValidateWorkspacePath(path);
+
+                    var dir = Path.GetDirectoryName(fullPath);
+                    if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+
+                    File.AppendAllText(fullPath, text);
+                    response["success"] = true;
+                }
+                catch (Exception ex) { response["message"] = ex.Message; }
+
+                socket.Send(response.ToString());
+            });
+
+            AddListener("isfile", (socket, data) =>
+            {
+                string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
+                int pid = (data.ContainsKey("pid") && data["pid"] != null) ? data["pid"].Value<int>() : 0;
+                JObject response = new JObject { ["type"] = "response", ["success"] = false, ["pid"] = pid };
+                if (!string.IsNullOrEmpty(id)) response["id"] = id;
+
+                try
+                {
+                    string path = (data.ContainsKey("path") && data["path"] != null) ? data["path"].ToString() : null;
+                    string fullPath = ResolveAndValidateWorkspacePath(path);
+
+                    response["isfile"] = File.Exists(fullPath);
+                    response["success"] = true;
+                }
+                catch (Exception ex) { response["message"] = ex.Message; }
+
+                socket.Send(response.ToString());
+            });
+
+            AddListener("isfolder", (socket, data) =>
+            {
+                string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
+                int pid = (data.ContainsKey("pid") && data["pid"] != null) ? data["pid"].Value<int>() : 0;
+                JObject response = new JObject { ["type"] = "response", ["success"] = false, ["pid"] = pid };
+                if (!string.IsNullOrEmpty(id)) response["id"] = id;
+
+                try
+                {
+                    string path = (data.ContainsKey("path") && data["path"] != null) ? data["path"].ToString() : null;
+                    string fullPath = ResolveAndValidateWorkspacePath(path);
+
+                    response["isfolder"] = Directory.Exists(fullPath);
+                    response["success"] = true;
+                }
+                catch (Exception ex) { response["message"] = ex.Message; }
+
+                socket.Send(response.ToString());
+            });
+
+            AddListener("makefolder", (socket, data) =>
+            {
+                string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
+                int pid = (data.ContainsKey("pid") && data["pid"] != null) ? data["pid"].Value<int>() : 0;
+                JObject response = new JObject { ["type"] = "response", ["success"] = false, ["pid"] = pid };
+                if (!string.IsNullOrEmpty(id)) response["id"] = id;
+
+                try
+                {
+                    string path = (data.ContainsKey("path") && data["path"] != null) ? data["path"].ToString() : null;
+                    if (path == null) throw new Exception("Missing required key: path");
+
+                    string fullPath = ResolveAndValidateWorkspacePath(path);
+
+                    Directory.CreateDirectory(fullPath);
+                    response["success"] = true;
+                }
+                catch (Exception ex) { response["message"] = ex.Message; }
+
+                socket.Send(response.ToString());
+            });
+
+            AddListener("listfiles", (socket, data) =>
+            {
+                string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
+                int pid = (data.ContainsKey("pid") && data["pid"] != null) ? data["pid"].Value<int>() : 0;
+                JObject response = new JObject { ["type"] = "response", ["success"] = false, ["pid"] = pid };
+                if (!string.IsNullOrEmpty(id)) response["id"] = id;
+
+                try
+                {
+                    string path = (data.ContainsKey("path") && data["path"] != null) ? data["path"].ToString() : null;
+                    string fullPath;
+                    if (string.IsNullOrEmpty(path) || path == ".") fullPath = _workspaceRoot;
+                    else fullPath = ResolveAndValidateWorkspacePath(path);
+
+                    var files = new JArray();
+                    if (Directory.Exists(fullPath))
+                    {
+                        foreach (var f in Directory.GetFiles(fullPath)) files.Add(f);
+                        foreach (var d in Directory.GetDirectories(fullPath)) files.Add(d);
+                    }
+
+                    response["files"] = files;
+                    response["success"] = true;
+                }
+                catch (Exception ex) { response["message"] = ex.Message; }
+
+                socket.Send(response.ToString());
+            });
+
+            AddListener("delfile", (socket, data) =>
+            {
+                string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
+                int pid = (data.ContainsKey("pid") && data["pid"] != null) ? data["pid"].Value<int>() : 0;
+                JObject response = new JObject { ["type"] = "response", ["success"] = false, ["pid"] = pid };
+                if (!string.IsNullOrEmpty(id)) response["id"] = id;
+
+                try
+                {
+                    string path = (data.ContainsKey("path") && data["path"] != null) ? data["path"].ToString() : null;
+                    if (path == null) throw new Exception("Missing required key: path");
+                    string fullPath = ResolveAndValidateWorkspacePath(path);
+
+                    if (File.Exists(fullPath)) File.Delete(fullPath);
+                    response["success"] = true;
+                }
+                catch (Exception ex) { response["message"] = ex.Message; }
+
+                socket.Send(response.ToString());
+            });
+
+            AddListener("delfolder", (socket, data) =>
+            {
+                string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
+                int pid = (data.ContainsKey("pid") && data["pid"] != null) ? data["pid"].Value<int>() : 0;
+                JObject response = new JObject { ["type"] = "response", ["success"] = false, ["pid"] = pid };
+                if (!string.IsNullOrEmpty(id)) response["id"] = id;
+
+                try
+                {
+                    string path = (data.ContainsKey("path") && data["path"] != null) ? data["path"].ToString() : null;
+                    if (path == null) throw new Exception("Missing required key: path");
+                    string fullPath = ResolveAndValidateWorkspacePath(path);
+
+                    if (Directory.Exists(fullPath)) Directory.Delete(fullPath, true);
                     response["success"] = true;
                 }
                 catch (Exception ex) { response["message"] = ex.Message; }
