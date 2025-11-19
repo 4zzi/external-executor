@@ -9,6 +9,8 @@
     local WebSocketService = game:GetService("WebSocketService")
     local RobloxReplicatedStorage = game:GetService("RobloxReplicatedStorage")
     local CorePackages = game:GetService("CorePackages")
+    local common = game:GetService("CoreGui").RobloxGui.Modules.Common
+    local commonutil = common.CommonUtil
     local Players = game:GetService("Players")
     local RunService = game:GetService("RunService")
     local InsertService = game:GetService("InsertService")
@@ -40,6 +42,10 @@
     local proxyobjects = Instance.new("Folder")
     proxyobjects.Name = "proxyobjects"
     proxyobjects.Parent = Container
+
+    local constants = commonutil:Clone()
+    constants.Name = "Constants"
+    constants.Parent = common -- getscriptclosure fix
 
     -------------------------------------------------------------------------------
     -- ## WebSocket Client Initialization
@@ -1503,7 +1509,7 @@
 
     local lz4 = {}
     local touchers_reg = setmetatable({}, { __mode = "ks" })
-    local nilinstances, cache = {Instance.new("Part")}, {cached = {}}   
+    local nilinstances, cache = {Instance.new("Part")}, {cached = {}, invalidated = {}}   
 
     type Streamer = {
         Offset: number,
@@ -2335,16 +2341,20 @@
                 callHandlers(conn.OnMessage, data)
             end)
         end
+
         if raw.Opened then
             raw.Opened:Connect(function()
                 callHandlers(conn.OnOpen)
             end)
         end
+
         if raw.Closed then
             raw.Closed:Connect(function()
                 callHandlers(conn.OnClose)
             end)
         end
+
+        return conn
     end
 
     local clonerefs = {}
@@ -3034,15 +3044,43 @@
     end
 
     function cache.iscached(t)
-        if type(t) ~= "userdata" or not t.IsDescendantOf then
+        if typeof(t) ~= "Instance" then
             return false
         end
-        return cache.cached[t] ~= 'r' and (not t:IsDescendantOf(game))
+
+        -- temporarily parent it if it has no parent
+        local previousParent = t.Parent
+        if not previousParent then
+            t.Parent = Oracle
+        end
+
+        -- respect manual invalidation first
+        if cache.invalidated[t] then
+            if not previousParent then t.Parent = nil end
+            return false
+        end
+
+        -- already cached
+        if cache.cached[t] then
+            if not previousParent then t.Parent = nil end
+            return true
+        end
+
+        -- cache it if not in game
+        if not t:IsDescendantOf(game) then
+            cache.cached[t] = true
+            if not previousParent then t.Parent = nil end
+            return true
+        end
+
+        if not previousParent then t.Parent = nil end
+        return false
     end
 
     function cache.invalidate(t)
-        cache.cached[t] = 'r'
-        t.Parent = nil
+        cache.cached[t] = nil
+        cache.invalidated[t] = true
+        t.Parent = nil  
     end
 
     function cache.replace(x, y)
@@ -3056,11 +3094,6 @@
 
     function Environment.getgc()
         return table.clone(nilinstances)
-    end
-    
-    function Environment.setthreadidentity()
-        print(Environment.getthreadidentity(), "Not Implemented")
-        return Environment.getthreadidentity(), "Not Implemented"
     end
 
     function Environment.getsenv(script_instance)
@@ -3104,17 +3137,22 @@
         return connections
     end
 
-    function Environment.hookfunction(func, rep) -- only hooks global functions
+    function Environment.hookfunction(func, rep)
         local env = getfenv(2)
         assert(type(env) == "table", "Environment is not a table", 2)
+
+        local original = func
+
         for i, v in pairs(env) do
             if v == func then
-                env[i] = rep
-                return rep
+                env[i] = function(...)
+                    return rep(...)  -- returns exactly what the replacement returns
+                end
+                return original   -- return original function
             end
         end
-        -- If function not found in environment, still return the replacement
-        return rep
+
+        return original
     end
 
     function Environment.getrawmetatable(object)
@@ -3280,15 +3318,11 @@
     iswindowactive = isrbxactive
     Environment.cache = cache
     getgc = Environment.getgc
-    setidentity = Environment.setthreadidentity
-    setthreadcontext = Environment.setthreadidentity
-
-    setthreadidentity = Environment.setthreadidentity
     getsenv = Environment.getsenv
     getconnections = Environment.getconnections
+
     hookfunction = Environment.hookfunction
     replaceclosure = hookfunction
-
     getrawmetatable = Environment.getrawmetatable
     setrawmetatable = Environment.setrawmetatable
 
@@ -3314,25 +3348,24 @@
 
     workspace.Parent.DescendantRemoving:Connect(function(des)
         table.insert(nilinstances, des)
-        delay(15, function() -- prevent overflow
-            local index = table.find(nilinstances, des)
-            if index then
-                table.remove(nilinstances, index)
+        delay(15, function()
+            for i = #nilinstances, 1, -1 do
+                if nilinstances[i] == des then
+                    table.remove(nilinstances, i)
+                    break
+                end
             end
-            if cache.cached[des] then
-                cache.cached[des] = nil
-            end
+            cache.cached[des] = nil
         end)
-        cache.cached[des] = "r"
+
+        -- only mark it if not already invalidated
+        if cache.cached[des] ~= nil then
+            cache.cached[des] = true
+        end
     end)
 
     workspace.Parent.DescendantAdded:Connect(function(des)
         cache.cached[des] = true
     end)
-
-    game:GetService("StarterGui"):SetCore("SendNotification",{
-        Title = "Injected",
-        Text = "Oracle (v"..VERSION..")",
-    })
 
     client:Send(HttpService:JSONEncode({action = "initialize", pid = PROCESS_ID}))

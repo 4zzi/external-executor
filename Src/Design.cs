@@ -2,7 +2,9 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using ClickableTransparentOverlay;
 using ImGuiNET;
+using RMemory;
 using System.Text.Json;
+using ImGuiColorTextEditNet;
 #if USE_SCINTILLA
 using ScintillaNET;
 using System.Drawing;
@@ -14,6 +16,7 @@ public class IMGui : Overlay
     private int _activeTab = 0;
     private int _nextActiveTab = -1;
     private bool _showWindow = true;
+    private bool _isInjected = false;
     private string _renameBuffer = "";
     private int _renamingTab = -1;
     private List<string> _scriptFiles = new List<string>();
@@ -26,10 +29,12 @@ public class IMGui : Overlay
     private float _editorScrollY = 0f;
     private int _caretIndex = 0;
     private int _selectionStart = -1;
-#if USE_SCINTILLA
-    private Scintilla _scintilla;
-#endif
-    private const string _defaultCode = "print(\"labubu 67\")";
+
+    #if USE_SCINTILLA
+        private Scintilla _scintilla;
+    #endif
+
+    private const string _defaultCode = "";
 
     [DllImport("user32.dll")]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
@@ -41,6 +46,9 @@ public class IMGui : Overlay
     private static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
     private const uint SWP_NOMOVE = 0x0002;
     private const uint SWP_NOSIZE = 0x0001;
+    private int _lastClickedScriptIndex = -1;
+    private double _lastClickTime = 0;
+    private const double DOUBLE_CLICK_TIME = 0.3; 
 
     public IMGui(Main.Roblox roblox) : base(1920, 1080)
     {
@@ -59,8 +67,9 @@ public class IMGui : Overlay
             Directory.CreateDirectory(_tabsFolder);
 
         File.WriteAllText(Path.Combine(_scriptsFolder, "List.lua"), "print(\"script list test\")");
-        File.WriteAllText(Path.Combine(_tabsFolder, "Script 1.lua"), "print(\"best exec 2067\")");
-        File.WriteAllText(Path.Combine(_tabsFolder, "Tabs.lua"), "print(\"tab saving test\")");
+        File.WriteAllText(Path.Combine(_scriptsFolder, "IY.lua"), "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/DarkNetworks/Infinite-Yield/main/latest.lua\"))()");
+        File.WriteAllText(Path.Combine(_tabsFolder, "Script 1.lua"), "print(\"oracle\")");
+        File.WriteAllText(Path.Combine(_scriptsFolder, "UNC.lua"), "loadstring(game:HttpGet(\"https://raw.githubusercontent.com/unified-naming-convention/NamingStandard/refs/heads/main/UNCCheckEnv.lua\"))()");
 
         LoadSavedTabs();
 
@@ -251,12 +260,33 @@ public class IMGui : Overlay
         }
 
         var screenSize = ImGui.GetIO().DisplaySize;
-        var windowSize = new Vector2(1050, 500);
+        const float targetAspect = 2.5f;
+
+        float desiredHeight = MathF.Min(350f, screenSize.Y * 2f);
+
+        float desiredWidth = desiredHeight * targetAspect;
+
+        float maxAllowedWidth = screenSize.X * 0.9f;
+        if (desiredWidth > maxAllowedWidth)
+        {
+            desiredWidth = maxAllowedWidth;
+            desiredHeight = desiredWidth / targetAspect;
+        }
+
+        var windowSize = new Vector2(desiredWidth, desiredHeight);
         var centeredPos = new Vector2((screenSize.X - windowSize.X) * 0.5f, (screenSize.Y - windowSize.Y) * 0.5f);
-        
+
         ImGui.SetNextWindowPos(centeredPos, ImGuiCond.Appearing);
         ImGui.SetNextWindowSize(windowSize, ImGuiCond.Appearing);
-        ImGui.SetNextWindowSizeConstraints(new Vector2(700, 300), new Vector2(2000, 1000));
+
+        float minHeight = MathF.Min(desiredHeight, 340f);
+
+        float minWidth = minHeight * targetAspect;
+        float maxHeight = MathF.Min(screenSize.Y * 0.95f, desiredHeight * 1.4f);
+        float maxWidth = MathF.Min(screenSize.X * 0.95f, maxHeight * targetAspect);
+        maxHeight = maxWidth / targetAspect;
+
+        ImGui.SetNextWindowSizeConstraints(new Vector2(minWidth, minHeight), new Vector2(maxWidth, maxHeight));
 
         ImGui.Begin("Oracle", ref _showWindow,
             ImGuiWindowFlags.NoCollapse |
@@ -271,12 +301,13 @@ public class IMGui : Overlay
 
         ImGui.SetCursorPosY(4);
         ImGui.Text("Oracle");
+
         ImGui.SameLine(ImGui.GetWindowWidth() - 50);
         ImGui.SetCursorPosY(2);
         ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0, 0, 0, 0));
         ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(1, 1, 1, 0.2f));
         ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(1, 1, 1, 0.3f));
-        if (ImGui.Button("⚙##settings"))
+        if (ImGui.Button("%##settings"))
             _showSettings = true;
         ImGui.SameLine();
         ImGui.SetCursorPosY(2);
@@ -285,11 +316,12 @@ public class IMGui : Overlay
         ImGui.PopStyleColor(3);
 
         ImGui.SetCursorPosY(26);
-        float sidebar = 150;
+        var available = ImGui.GetContentRegionAvail();
+        float sidebar = MathF.Min(160, available.X * 0.20f);
 
         ImGui.BeginChild("MainContent",
-            new Vector2(ImGui.GetContentRegionAvail().X - sidebar - 10,
-            ImGui.GetContentRegionAvail().Y),
+            new Vector2(available.X - sidebar - 6,
+            available.Y),
             ImGuiChildFlags.None,
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
 
@@ -398,8 +430,10 @@ public class IMGui : Overlay
         {
             string content = _tabs[_activeTab].Content;
             float editorH = ImGui.GetContentRegionAvail().Y - 45;
+            float editorLeft = ImGui.GetCursorPosX();
 
             ImGui.BeginChild("Editor", new Vector2(0, editorH), ImGuiChildFlags.None);
+
             ImGui.SetScrollY(_editorScrollY);
             float scrollY = _editorScrollY;
 
@@ -436,12 +470,72 @@ public class IMGui : Overlay
             }
 
             ImGui.Spacing();
-            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X * 0.01f);
-            float buttonWidth = ImGui.GetContentRegionAvail().X * 0.10f;
+            float controlsLeft = editorLeft + 10f;
+            ImGui.SetCursorPosX(controlsLeft);
+            float buttonWidth = ImGui.GetContentRegionAvail().X * 0.12f;
+
+            ImGui.Separator();
+            ImGui.SetCursorPosX(controlsLeft);
+
+            ImGui.AlignTextToFramePadding();
+            
+            float textHeight = ImGui.GetTextLineHeight();
+            float buttonHeight = 25f;
+            float verticalOffset = (buttonHeight - textHeight) * 0.5f;
+
+            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + verticalOffset);
+
+            if (_isInjected)
+            {
+                ImGui.TextColored(new Vector4(0.45f, 0.85f, 0.45f, 1f), "Injected");
+            }
+            else
+            {
+                ImGui.TextColored(new Vector4(0.9f, 0.45f, 0.45f, 1f), "Not injected");
+            }
+
+            ImGui.SameLine();
+            ImGui.SetCursorPosX(controlsLeft + 100);
+
+            void Inject()
+            {
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        _roblox.Inject();
+                        _isInjected = true;
+                    }
+
+                    catch
+                    {
+                        _isInjected = false;
+                    }
+                });
+            }
 
             if (ImGui.Button("Execute", new Vector2(buttonWidth, 25)))
-                Task.Run(async () => { try { await _roblox.Execute(_tabs[_activeTab].Content); } catch { } });
+                if (_isInjected)
+                {
+                    Task.Run(() =>
+                    {
+                        Task.Run(async () => { try { await _roblox.Execute(_tabs[_activeTab].Content); } catch { } });
+                    });
+                }
 
+            ImGui.SameLine();
+            ImGui.SetCursorPosX(ImGui.GetCursorPosX() + 5);
+
+            if (ImGui.Button("Inject", new Vector2(buttonWidth, 25)))
+            {
+                if (!_isInjected)
+                {
+                    Task.Run(() =>
+                    {
+                        Inject();
+                    });
+                }
+            }
             ImGui.SameLine();
             ImGui.SetCursorPosX(ImGui.GetCursorPosX() + 5);
 
@@ -450,6 +544,8 @@ public class IMGui : Overlay
                 _tabs[_activeTab].Content = "";
                 SaveTabsToFolder();
             }
+            ImGui.SetCursorPosX(controlsLeft);
+            ImGui.Separator();
         }
 
         ImGui.EndChild();
@@ -462,21 +558,52 @@ public class IMGui : Overlay
             RefreshScriptList();
         ImGui.Spacing();
         ImGui.BeginChild("SL", new Vector2(0, 0));
-        
-        foreach (var s in _scriptFiles)
+
+        for (int scriptIdx = 0; scriptIdx < _scriptFiles.Count; scriptIdx++)
         {
-            if (ImGui.Selectable(s))
+            var s = _scriptFiles[scriptIdx];
+            if (ImGui.Selectable(s, false))
             {
                 string p = Path.Combine(_scriptsFolder, s);
                 if (File.Exists(p))
                 {
+                    double currentTime = ImGui.GetTime();
+                    bool isDoubleClick = false;
+
+                    if (_lastClickedScriptIndex == scriptIdx && 
+                        (currentTime - _lastClickTime) < DOUBLE_CLICK_TIME)
+                    {
+                        isDoubleClick = true;
+                    }
+
                     string fileName = Path.GetFileNameWithoutExtension(s);
                     string content = File.ReadAllText(p);
-                    _tabs.Add(new ScriptTab { Name = fileName, Content = content });
-                    _activeTab = _tabs.Count - 1;
+
+                    if (isDoubleClick)
+                    {
+                        _tabs.Add(new ScriptTab { Name = fileName, Content = content });
+                        _activeTab = _tabs.Count - 1;
+                        SaveTabsToFolder();
+                        
+                        _lastClickedScriptIndex = -1;
+                        _lastClickTime = 0;
+                    }
+                    else
+                    {
+                        if (_activeTab >= 0 && _activeTab < _tabs.Count)
+                        {
+                            _tabs[_activeTab].Content = content;
+                            _tabs[_activeTab].Name = fileName;
+                            SaveTabsToFolder();
+                        }
+                        
+                        _lastClickedScriptIndex = scriptIdx;
+                        _lastClickTime = currentTime;
+                    }
                 }
             }
         }
+        
         ImGui.EndChild();
         ImGui.EndChild();
 

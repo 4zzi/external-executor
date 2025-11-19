@@ -1,1 +1,1 @@
-print("best exec 2067")
+print("oracle")

@@ -39,8 +39,9 @@ namespace Main
         [DllImport("kernel32.dll")]
         private static extern IntPtr GetConsoleWindow();
 
-        public static IntPtr GamePointer = Memory.Read<IntPtr>(Memory.GetBaseAddress() + Offsets.FakeDataModel.Pointer);
-        public static RobloxInstance Game = new RobloxInstance(Memory.Read<IntPtr>(GamePointer + 0x1C0));
+        public static IntPtr VisualEngine = Memory.Read<IntPtr>(Memory.GetBaseAddress() + Offsets.FakeDataModel.VisualEnginePointer);
+        public static IntPtr GamePointer = Memory.Read<IntPtr>(VisualEngine + Offsets.FakeDataModel.VisualEngineToDataModel1);
+        public static RobloxInstance Game = new RobloxInstance(Memory.Read<IntPtr>(GamePointer + Offsets.FakeDataModel.VisualEngineToDataModel2)); // THIS IS SO UD!
 
         public Websocket _server;
 
@@ -52,16 +53,14 @@ namespace Main
                 {
                     if (Game == null || Game.Self == IntPtr.Zero)
                         throw new Exception("Failed to get Base Address");
-                       
-                    // to do list: getservice instead of findfirstchild cus they change the services name
 
                     var VirtualInput = new InputSimulator();
-                    var manager = Game.FindFirstChildFromPath("CoreGui.RobloxGui.Modules.PlayerList.PlayerListManager");
+                    var manager = Game.GetService("CoreGui").FindFirstChildFromPath("RobloxGui.Modules.PlayerList.PlayerListManager");
 
                     if (manager == null || manager.Self == IntPtr.Zero)
                         throw new Exception("Injection failed");
 
-                    var spoof = Game.FindFirstChildFromPath("StarterPlayer.StarterPlayerScripts.PlayerModule.ControlModule.VRNavigation");
+                    var spoof = Game.GetService("StarterPlayer").FindFirstChildFromPath("StarterPlayerScripts.PlayerModule.ControlModule.VRNavigation");
                     if (spoof == null || spoof.Self == IntPtr.Zero)
                         throw new Exception("Injection failed");
 
@@ -106,6 +105,7 @@ namespace Main
                 throw;
             }
         }
+        
         public async Task Execute(string source)
         {
             try
@@ -120,7 +120,7 @@ namespace Main
                     ["source"] = base64
                 };
 
-                var response = await BridgeHost.Server.SendAndReceive(execute, pid, 5000);
+                var response = await BridgeHost.Server.SendAndReceive(execute, pid, 6969);
                 
                 if (response["success"]?.Value<bool>() != true)
                 {
@@ -159,6 +159,7 @@ namespace Main
                 }
 
                 Console.Clear();
+                Console.WriteLine("[*] Please open Roblox.");
 
                 int attempts = 0;
                 while (!Memory.Attached())
@@ -183,8 +184,6 @@ namespace Main
 
                 try
                 {
-                    Roblox.Inject();
-
                     injectedClient = new Client(Memory.ProcessID, BridgeHost.Server);
                     BridgeHost.Server.AddClient(injectedClient);
 
@@ -192,11 +191,7 @@ namespace Main
 
                     IMGui Executor = new IMGui(Roblox);
 
-                    BridgeHost.Server.OnInitialized += (six_seven) => // idk why it only works with a dummy argument
-                    {
-                        Executor.Start(); // only start im gui when bridge.lua actually works
-                    };
-
+                    await Executor.Start(); 
                     await MonitorProcessAndExit();
                 }
                 catch (Exception ex)

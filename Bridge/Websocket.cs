@@ -535,6 +535,7 @@ namespace Bridge
                     string decodedChunk = Encoding.UTF8.GetString(raw);
                     string wrappedCode = $@"
                     return function(...)
+                        -- oracle executor 
                         {decodedChunk}
                     end
                     ";

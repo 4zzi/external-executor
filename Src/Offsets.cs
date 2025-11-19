@@ -26,7 +26,9 @@ namespace Offsets
      }
     
     public static class FakeDataModel {
-         public static readonly int Pointer = 0x76B46B8;
+         public static readonly int VisualEnginePointer = 0x743BDD0;
+         public static readonly int VisualEngineToDataModel1 = 0x700;
+         public static readonly int VisualEngineToDataModel2 = 0x1C0;
     }
 
     public static class Instance {
