@@ -2345,6 +2345,8 @@
                 callHandlers(conn.OnClose)
             end)
         end
+
+        return conn
     end
 
     local clonerefs = {}
