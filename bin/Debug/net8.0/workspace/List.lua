@@ -1,0 +1,1 @@
+print("script list test")

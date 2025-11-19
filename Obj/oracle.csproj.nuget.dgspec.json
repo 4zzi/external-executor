@@ -1,25 +1,31 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\Admin\\Downloads\\bi\\external-executor\\oracle.csproj": {}
+    "C:\\Users\\VastF\\Downloads\\external-executor\\oracle.csproj": {}
   },
   "projects": {
-    "C:\\Users\\Admin\\Downloads\\bi\\external-executor\\oracle.csproj": {
+    "C:\\Users\\VastF\\Downloads\\external-executor\\oracle.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\Admin\\Downloads\\bi\\external-executor\\oracle.csproj",
+        "projectUniqueName": "C:\\Users\\VastF\\Downloads\\external-executor\\oracle.csproj",
         "projectName": "oracle",
-        "projectPath": "C:\\Users\\Admin\\Downloads\\bi\\external-executor\\oracle.csproj",
-        "packagesPath": "C:\\Users\\Admin\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\Admin\\Downloads\\bi\\external-executor\\obj\\",
+        "projectPath": "C:\\Users\\VastF\\Downloads\\external-executor\\oracle.csproj",
+        "packagesPath": "C:\\Users\\VastF\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\VastF\\Downloads\\external-executor\\obj\\",
         "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        ],
         "configFilePaths": [
-          "C:\\Users\\Admin\\AppData\\Roaming\\NuGet\\NuGet.Config"
+          "C:\\Users\\VastF\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
         "originalTargetFrameworks": [
           "net8.0"
         ],
         "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {

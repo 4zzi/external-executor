@@ -8,6 +8,6 @@ if %errorlevel% neq 0 (
     exit /b
 )
 
-cd C:\Users\Admin\Downloads\bi\external-executor
+cd C:\Users\VastF\Downloads\external-executor
 dotnet run --configuration Debug
 pause

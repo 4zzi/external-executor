@@ -25,7 +25,7 @@ namespace Client
         public static string GetInitScript()
         {
             string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
-            string initscript = Path.Combine(root, "Roblox", "Injector.lua");
+            string initscript = Path.Combine(root, "Lua", "Bridge.lua");
 
             if (!File.Exists(initscript))
                 throw new FileNotFoundException($"Injector not found at: {initscript}");
@@ -34,8 +34,8 @@ namespace Client
             scriptContent = Memory.ReplaceString(scriptContent, "%PROCESS_ID%", Memory.ProcessID);
 
             // write to temporary file, not original
-            string tempPath = Path.Combine(root, "Roblox", "InitScript.lua");
-            File.WriteAllText(tempPath, "script.Parent=nil;task.spawn(function()" + scriptContent + "\nend);while true do task.wait(9e9) end");
+            string tempPath = Path.Combine(root, "Bridge", "Bridge.lua");
+            File.WriteAllText(tempPath, "script.Parent = nil \ntask.spawn(function() \n" + scriptContent + "\nend)\n\nwhile true do \n   task.wait(9e9) \nend");
 
             return tempPath;
         }
@@ -59,7 +59,6 @@ namespace Client
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
-                // Prefer the script directory as working directory so compiler output lands beside the script
                 WorkingDirectory = Path.GetDirectoryName(scriptFullPath) ?? Path.GetDirectoryName(compilerPath) ?? root
             };
 
@@ -92,27 +91,22 @@ namespace Client
                 }
             }
 
-            // Fallback: search recursively for a recently created Compiled.txt under the repo root and working directories
             if (compiledPath == null)
             {
                 try
                 {
                     var candidates = new List<string>();
-                    // search under root
                     if (Directory.Exists(root))
                         candidates.AddRange(Directory.GetFiles(root, "Compiled.txt", SearchOption.AllDirectories));
 
-                    // search under compiler directory
                     var compDir = Path.GetDirectoryName(compilerPath) ?? root;
                     if (Directory.Exists(compDir))
                         candidates.AddRange(Directory.GetFiles(compDir, "Compiled.txt", SearchOption.AllDirectories));
 
-                    // search under AppContext.BaseDirectory
                     var baseDir = AppContext.BaseDirectory ?? AppDomain.CurrentDomain.BaseDirectory;
                     if (Directory.Exists(baseDir))
                         candidates.AddRange(Directory.GetFiles(baseDir, "Compiled.txt", SearchOption.AllDirectories));
 
-                    // pick the most recently written candidate, if any
                     compiledPath = candidates
                         .Where(File.Exists)
                         .OrderByDescending(p => File.GetLastWriteTimeUtc(p))
@@ -123,17 +117,16 @@ namespace Client
 
             if (compiledPath == null)
             {
-                // Provide stdout/stderr in exception to aid debugging
                 var msg = new StringBuilder();
                 msg.AppendLine("Compiled.txt not found (searched common locations)");
                 if (!string.IsNullOrWhiteSpace(stdout))
                 {
-                    msg.AppendLine("--- compiler stdout ---");
+                    msg.AppendLine("--- compiler error ---");
                     msg.AppendLine(stdout);
                 }
                 if (!string.IsNullOrWhiteSpace(err))
                 {
-                    msg.AppendLine("--- compiler stderr ---");
+                    msg.AppendLine("--- compiler error ---");
                     msg.AppendLine(err);
                 }
 
@@ -142,8 +135,6 @@ namespace Client
 
             byte[] raw = File.ReadAllBytes(compiledPath);
             try { File.Delete(compiledPath); } catch { }
-
-            // Console.WriteLine("[*] " + BitConverter.ToString(raw.Take(67).ToArray()).Replace("-", " "));
             return raw;
         }
     }

@@ -53,6 +53,8 @@ namespace Main
                     if (Game == null || Game.Self == IntPtr.Zero)
                         throw new Exception("Failed to get Base Address");
                        
+                    // to do list: getservice instead of findfirstchild cus they change the services name
+
                     var VirtualInput = new InputSimulator();
                     var manager = Game.FindFirstChildFromPath("CoreGui.RobloxGui.Modules.PlayerList.PlayerListManager");
 
@@ -188,9 +190,13 @@ namespace Main
 
                     REPL.REPLPrint("[*] Please keep this console open unless you closed the gui.\n");
 
-                    OracleImGui Executor = new OracleImGui(Roblox);
+                    IMGui Executor = new IMGui(Roblox);
 
-                    await Executor.Start();
+                    BridgeHost.Server.OnInitialized += (six_seven) => // idk why it only works with a dummy argument
+                    {
+                        Executor.Start(); // only start im gui when bridge.lua actually works
+                    };
+
                     await MonitorProcessAndExit();
                 }
                 catch (Exception ex)

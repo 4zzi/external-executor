@@ -32,3 +32,12 @@ i:\Download\visual studio stuff\cs\Oracle\obj\x64\Debug\net8.0\refint\oracle.dll
 i:\Download\visual studio stuff\cs\Oracle\obj\x64\Debug\net8.0\oracle.pdb
 I:\Download\visual studio stuff\cs\Oracle\obj\x64\Debug\net8.0\oracle.genruntimeconfig.cache
 I:\Download\visual studio stuff\cs\Oracle\obj\x64\Debug\net8.0\ref\oracle.dll
+c:\Users\VastF\Downloads\external-executor\obj\x64\Debug\net8.0\oracle.csproj.AssemblyReference.cache
+c:\Users\VastF\Downloads\external-executor\obj\x64\Debug\net8.0\oracle.GeneratedMSBuildEditorConfig.editorconfig
+c:\Users\VastF\Downloads\external-executor\obj\x64\Debug\net8.0\oracle.AssemblyInfoInputs.cache
+c:\Users\VastF\Downloads\external-executor\obj\x64\Debug\net8.0\oracle.AssemblyInfo.cs
+c:\Users\VastF\Downloads\external-executor\obj\x64\Debug\net8.0\oracle.csproj.CoreCompileInputs.cache
+c:\Users\VastF\Downloads\external-executor\obj\x64\Debug\net8.0\oracle.sourcelink.json
+c:\Users\VastF\Downloads\external-executor\obj\x64\Debug\net8.0\oracle.dll
+c:\Users\VastF\Downloads\external-executor\obj\x64\Debug\net8.0\refint\oracle.dll
+c:\Users\VastF\Downloads\external-executor\obj\x64\Debug\net8.0\oracle.pdb

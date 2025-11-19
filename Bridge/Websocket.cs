@@ -245,22 +245,16 @@ namespace Bridge
         private void SetupListeners()
         {
             // Resolve base directory and enforce workspace boundaries for mutating filesystem ops
-            string _baseDirForWorkspace = AppContext.BaseDirectory ?? AppDomain.CurrentDomain.BaseDirectory;
-            string _workspaceRoot = Path.GetFullPath(Path.Combine(_baseDirForWorkspace, "workspace"));
+            string _baseDir = AppContext.BaseDirectory ?? AppDomain.CurrentDomain.BaseDirectory;
+            string _workspace = Path.GetFullPath(Path.Combine(_baseDir, "workspace"));
 
             string ResolveAndValidateWorkspacePath(string path)
             {
                 if (string.IsNullOrEmpty(path)) throw new Exception("Missing required key: path");
-                string fullPath = Path.IsPathRooted(path) ? Path.GetFullPath(path) : Path.GetFullPath(Path.Combine(_baseDirForWorkspace, path));
-                // Allow the workspace root itself or any path under it
-                if (!fullPath.Equals(_workspaceRoot, StringComparison.OrdinalIgnoreCase) &&
-                    !fullPath.StartsWith(_workspaceRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new Exception("Operation not allowed outside workspace");
-                }
-
+                string fullPath = Path.IsPathRooted(path) ? Path.GetFullPath(path) : Path.GetFullPath(Path.Combine(_workspace, path));
                 return fullPath;
             }
+
             AddListener("initialize", (socket, data) =>
             {
                 int pid = data.ContainsKey("pid") ? data["pid"].Value<int>() : 0;
@@ -268,9 +262,7 @@ namespace Bridge
                 // Ensure a workspace directory exists next to the running executable.
                 try
                 {
-                    string baseDir = AppContext.BaseDirectory ?? AppDomain.CurrentDomain.BaseDirectory;
-                    string workspaceRoot = Path.Combine(baseDir, "workspace");
-                    Directory.CreateDirectory(workspaceRoot);
+                    Directory.CreateDirectory(Path.Combine(_baseDir, "workspace"));
                 }
                 catch { }
 
@@ -299,7 +291,7 @@ namespace Bridge
                     }
 
                     string decodedSource = Encoding.UTF8.GetString(raw);
-                    string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.lua");
+                    string tempFile = Path.Combine(Path.GetTempPath(), $"Oracle.lua");
                     File.WriteAllText(tempFile, decodedSource);
                     try
                     {
@@ -346,46 +338,57 @@ namespace Bridge
                             headers = new JObject();
 
                         using (var client = new HttpClient())
-                        using (var requestMessage = new HttpRequestMessage(new HttpMethod(method), url))
                         {
-                            foreach (var pair in headers)
+                            client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+                            client.Timeout = TimeSpan.FromSeconds(30);
+                            
+                            using (var requestMessage = new HttpRequestMessage(new HttpMethod(method), url))
                             {
-                                string key = pair.Key;
-                                string value = pair.Value?.ToString() ?? "";
-
-                                if (!requestMessage.Headers.TryAddWithoutValidation(key, value))
+                                requestMessage.Headers.TryAddWithoutValidation("Accept", "*/*");
+                                foreach (var pair in headers)
                                 {
-                                    if (requestMessage.Content == null)
-                                        requestMessage.Content = new StringContent("");
+                                    string key = pair.Key;
+                                    string value = pair.Value?.ToString() ?? "";
 
-                                    requestMessage.Content.Headers.TryAddWithoutValidation(key, value);
+                                    if (key.Equals("User-Agent", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        client.DefaultRequestHeaders.Remove("User-Agent");
+                                        client.DefaultRequestHeaders.Add("User-Agent", value);
+                                    }
+                                    else if (!requestMessage.Headers.TryAddWithoutValidation(key, value))
+                                    {
+                                        if (requestMessage.Content == null)
+                                            requestMessage.Content = new StringContent("");
+
+                                        requestMessage.Content.Headers.TryAddWithoutValidation(key, value);
+                                    }
                                 }
+
+                                if (method == "POST" || method == "PUT" || method == "PATCH")
+                                {
+                                    requestMessage.Content = new StringContent(body ?? "");
+                                }
+
+                                var response = await client.SendAsync(requestMessage);
+                                string responseBody = await response.Content.ReadAsStringAsync();
+
+                                JObject result = new JObject
+                                {
+                                    ["type"] = "response",
+                                    ["pid"] = data["pid"],
+                                    ["id"] = data["id"],
+                                    ["success"] = true,
+                                    ["status_code"] = (int)response.StatusCode,
+                                    ["status_message"] = response.ReasonPhrase,
+                                    ["body"] = responseBody,
+                                    ["headers"] = JObject.FromObject(
+                                        response.Headers.Concat(response.Content.Headers)
+                                            .ToDictionary(x => x.Key, x => string.Join(",", x.Value))
+                                    )
+                                };
+
+                                socket.Send(result.ToString());
                             }
-
-                            if (method == "POST" || method == "PUT" || method == "PATCH")
-                            {
-                                requestMessage.Content = new StringContent(body ?? "");
-                            }
-
-                            var response = await client.SendAsync(requestMessage);
-                            string responseBody = await response.Content.ReadAsStringAsync();
-
-                            JObject result = new JObject
-                            {
-                                ["type"] = "response",
-                                ["pid"] = data["pid"],
-                                ["id"] = data["id"],
-                                ["success"] = true,
-                                ["status_code"] = (int)response.StatusCode,
-                                ["status_message"] = response.ReasonPhrase,
-                                ["body"] = responseBody,
-                                ["headers"] = JObject.FromObject(
-                                    response.Headers.Concat(response.Content.Headers)
-                                        .ToDictionary(x => x.Key, x => string.Join(",", x.Value))
-                                )
-                            };
-
-                            socket.Send(result.ToString());
                         }
                     }
                     catch (Exception ex)
@@ -396,7 +399,7 @@ namespace Bridge
                             ["pid"] = data["pid"],
                             ["id"] = data["id"],
                             ["success"] = false,
-                            ["Error"] = ex.Message
+                            ["message"] = ex.Message
                         };
 
                         socket.Send(error.ToString());
@@ -531,11 +534,12 @@ namespace Bridge
 
                     string decodedChunk = Encoding.UTF8.GetString(raw);
                     string wrappedCode = $@"
-return function(...)
-{decodedChunk}
-end
-";
-                    string tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.lua");
+                    return function(...)
+                        {decodedChunk}
+                    end
+                    ";
+
+                    string tempFile = Path.Combine(Path.GetTempPath(), $"Oracle.lua");
                     File.WriteAllText(tempFile, wrappedCode);
 
                     try
@@ -557,7 +561,6 @@ end
                 socket.Send(response.ToString());
             });
 
-            // rconsole handlers: create/print/clear/destroy/input/settitle
             AddListener("rconsolecreate", (socket, data) =>
             {
                 string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
@@ -880,7 +883,6 @@ end
                 socket.Send(response.ToString());
             });
 
-            // Filesystem helpers exposed to injected clients
             AddListener("readfile", (socket, data) =>
             {
                 string id = data.ContainsKey("id") ? (data["id"]?.ToString() ?? "") : "";
@@ -894,7 +896,7 @@ end
                     // default to workspace root when path is omitted
                     string fullPath;
                     if (string.IsNullOrEmpty(path) || path == ".")
-                        fullPath = _workspaceRoot;
+                        fullPath = _workspace;
                     else
                         fullPath = ResolveAndValidateWorkspacePath(path);
 
@@ -1036,7 +1038,7 @@ end
                 {
                     string path = (data.ContainsKey("path") && data["path"] != null) ? data["path"].ToString() : null;
                     string fullPath;
-                    if (string.IsNullOrEmpty(path) || path == ".") fullPath = _workspaceRoot;
+                    if (string.IsNullOrEmpty(path) || path == ".") fullPath = _workspace;
                     else fullPath = ResolveAndValidateWorkspacePath(path);
 
                     var files = new JArray();
