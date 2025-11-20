@@ -75,6 +75,8 @@ namespace RMemory
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
             public string szExePath;
         }
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern IntPtr GetModuleHandle(string lpModuleName);
 
         public static bool Attached()
         {

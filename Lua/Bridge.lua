@@ -3,7 +3,6 @@
     -- https://github.com/khanhmodsdep/Open-Source-External-Script-Executor/blob/main/Xeno/include/client.lua#L638
 
     -- 11/18/2025 11:10 PM 4zzi
-    -- holy paste lord
 
     local HttpService = game:GetService("HttpService")
     local WebSocketService = game:GetService("WebSocketService")
@@ -3203,6 +3202,51 @@
         return o
     end
 
+    function Environment.getconstant(func, index)
+        if type(func) ~= "function" then
+            error("bad argument #1 to 'getconstant' (function expected, got " .. type(func) .. ")", 2)
+        end
+        
+        if type(index) ~= "number" or index < 1 then
+            error("bad argument #2 to 'getconstant' (invalid index)", 2)
+        end
+        
+        local success, constants = pcall(function()
+            local info = debug.getinfo(func, "u")
+            if not info.nups or info.nups == 0 then
+                return nil
+            end
+            
+            for i = 1, math.huge do
+                local name, value = debug.getupvalue(func, i)
+                if not name then break end
+                if name == "_ENV" then
+                else
+                    if i == index then
+                        return value
+                    end
+                end
+            end
+            return nil
+        end)
+        
+        if success then
+            return constants
+        else
+            local constants = {}
+            local i = 1
+            while true do
+                local name, value = debug.getupvalue(func, i)
+                if not name then break end
+                if name ~= "_ENV" then
+                    table.insert(constants, value)
+                end
+                i = i + 1
+            end
+            return constants[index]
+        end
+    end
+
     -------------------------------------------------------------------------------
     -- ## expose uncs
     -------------------------------------------------------------------------------
@@ -3325,6 +3369,7 @@
     replaceclosure = hookfunction
     getrawmetatable = Environment.getrawmetatable
     setrawmetatable = Environment.setrawmetatable
+    getconstant = Environment.getconstant
 
     readfile = readfile
     writefile = writefile

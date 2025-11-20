@@ -41,7 +41,11 @@ namespace Main
 
         public static IntPtr VisualEngine = Memory.Read<IntPtr>(Memory.GetBaseAddress() + Offsets.FakeDataModel.VisualEnginePointer);
         public static IntPtr GamePointer = Memory.Read<IntPtr>(VisualEngine + Offsets.FakeDataModel.VisualEngineToDataModel1);
-        public static RobloxInstance Game = new RobloxInstance(Memory.Read<IntPtr>(GamePointer + Offsets.FakeDataModel.VisualEngineToDataModel2)); // THIS IS SO UD!
+        public static RobloxInstance Game = new RobloxInstance(
+            Memory.Read<IntPtr>(
+                GamePointer + Offsets.FakeDataModel.VisualEngineToDataModel2
+            )
+        ); // THIS IS SO UD!
 
         public Websocket _server;
 
@@ -55,14 +59,14 @@ namespace Main
                         throw new Exception("Failed to get Base Address");
 
                     var VirtualInput = new InputSimulator();
-                    var manager = Game.GetService("CoreGui").FindFirstChildFromPath("RobloxGui.Modules.PlayerList.PlayerListManager");
+                    var manager = Game.FindFirstChildOfClass("CoreGui").FindFirstChildFromPath("RobloxGui.Modules.PlayerList.PlayerListManager");
 
                     if (manager == null || manager.Self == IntPtr.Zero)
-                        throw new Exception("Injection failed");
+                        throw new Exception("Failed to get CoreGui");
 
                     var spoof = Game.GetService("StarterPlayer").FindFirstChildFromPath("StarterPlayerScripts.PlayerModule.ControlModule.VRNavigation");
                     if (spoof == null || spoof.Self == IntPtr.Zero)
-                        throw new Exception("Injection failed");
+                        throw new Exception("Failed to get StarterPlayer");
 
                     string initscript = Executor.GetInitScript();
                     byte[] bytecode = Executor.Compile(initscript);

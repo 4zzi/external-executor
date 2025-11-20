@@ -144,3 +144,6 @@ C:\Users\VastF\Downloads\external-executor\obj\Debug\net8.0\refint\oracle.dll
 C:\Users\VastF\Downloads\external-executor\obj\Debug\net8.0\oracle.pdb
 C:\Users\VastF\Downloads\external-executor\obj\Debug\net8.0\oracle.genruntimeconfig.cache
 C:\Users\VastF\Downloads\external-executor\obj\Debug\net8.0\ref\oracle.dll
+C:\Users\VastF\Downloads\external-executor\bin\Debug\net8.0\System.CodeDom.dll
+C:\Users\VastF\Downloads\external-executor\bin\Debug\net8.0\System.Management.dll
+C:\Users\VastF\Downloads\external-executor\bin\Debug\net8.0\runtimes\win\lib\net8.0\System.Management.dll

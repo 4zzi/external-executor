@@ -3,6 +3,7 @@ using Microsoft.Win32;
 using RMemory;
 using Main;
 using System.Text;
+using SixLabors.ImageSharp.Memory;
 
 namespace Functions
 {
@@ -180,14 +181,9 @@ namespace Functions
             return new RobloxInstance(IntPtr.Zero);
         }
 
-        public RobloxInstance GetService(string name)
+        public RobloxInstance GetService(string className)
         {
-            if (Roblox.Game.FindFirstChild(name))
-            {
-                return Roblox.Game.FindFirstChild(name);
-            }
-
-            return new RobloxInstance(IntPtr.Zero);
+            return FindFirstChildOfClass(className);
         }
 
         public RobloxInstance WaitForChild(string name, int timeoutMs = 5000)

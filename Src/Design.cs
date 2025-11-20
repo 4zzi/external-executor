@@ -590,13 +590,6 @@ public class IMGui : Overlay
                     }
                     else
                     {
-                        if (_activeTab >= 0 && _activeTab < _tabs.Count)
-                        {
-                            _tabs[_activeTab].Content = content;
-                            _tabs[_activeTab].Name = fileName;
-                            SaveTabsToFolder();
-                        }
-                        
                         _lastClickedScriptIndex = scriptIdx;
                         _lastClickTime = currentTime;
                     }

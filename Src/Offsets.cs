@@ -1,5 +1,10 @@
 // commented offsets are universal offsets
 
+using System.Reflection.Metadata;
+using Functions;
+using Main;
+using RMemory;
+
 namespace Offsets
 {
      /*
@@ -18,9 +23,6 @@ namespace Offsets
 
      public static class FFlags
      {
-          public static readonly int DebugDisableTimeoutDisconnect = 0x6542420;
-          public static readonly int EnableLoadModule = 0x6531780;
-          public static readonly int PartyPlayerInactivityTimeoutInSeconds = 0x64f7d90;
           public static readonly int TaskSchedulerTargetFps = 0x6e54ccc;
           public static readonly int WebSocketServiceEnableClientCreation = 0x654F028;
      }
@@ -29,12 +31,15 @@ namespace Offsets
          public static readonly int VisualEnginePointer = 0x743BDD0;
          public static readonly int VisualEngineToDataModel1 = 0x700;
          public static readonly int VisualEngineToDataModel2 = 0x1C0;
+         public static readonly int ScriptContext = 0x3F0;
     }
 
     public static class Instance {
          public static readonly int ChildrenStart = 0x68;
          public static readonly int Name = 0xa8;
          public static readonly int LocalPlayer = 0x128;
+         public static readonly int ClassDescriptor = 0x18;
+         public static readonly int ClassName = 0x8;
     }
 
     public static class LocalScript {
