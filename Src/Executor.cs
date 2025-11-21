@@ -25,7 +25,7 @@ namespace Client
         public static string GetInitScript()
         {
             string root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
-            string initscript = Path.Combine(root, "Lua", "Bridge.lua");
+            string initscript = Path.Combine(root, "Environment", "Bridge.lua");
 
             if (!File.Exists(initscript))
                 throw new FileNotFoundException($"Injector not found at: {initscript}");

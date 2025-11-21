@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("oracle")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+4d47ebd74c38cf1ce9b93ea01946e346adc07581")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c01352a3dd351abb53ef3abef843b5d3db23be9f")]
 [assembly: System.Reflection.AssemblyProductAttribute("oracle")]
 [assembly: System.Reflection.AssemblyTitleAttribute("oracle")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

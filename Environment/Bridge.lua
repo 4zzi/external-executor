@@ -6,6 +6,7 @@
 
     local HttpService = game:GetService("HttpService")
     local WebSocketService = game:GetService("WebSocketService")
+    local UGCValidationService = game:GetService("UGCValidationService")
     local RobloxReplicatedStorage = game:GetService("RobloxReplicatedStorage")
     local CorePackages = game:GetService("CorePackages")
     local common = game:GetService("CoreGui").RobloxGui.Modules.Common
@@ -46,9 +47,9 @@
     constants.Name = "Constants"
     constants.Parent = common -- getscriptclosure fix
 
-    -------------------------------------------------------------------------------
+    --=============================================================================--
     -- ## WebSocket Client Initialization
-    -------------------------------------------------------------------------------
+    --=============================================================================--
 
     local client = WebSocketService:CreateClient("ws://127.0.0.1:6969")
     local is_server_ready = false
@@ -62,9 +63,9 @@
         task.wait(0.1)
     end
 
-    -------------------------------------------------------------------------------
+    --=============================================================================--
     -- ## Hash Lib
-    -------------------------------------------------------------------------------
+    --=============================================================================--
 
     local Alphabet = {}
     local Indexes = {}
@@ -199,15 +200,15 @@
         return table.concat(NewOutput)
     end
 
-    --------------------------------------------------------------------------------
+    --=============================================================================---
     -- LOCALIZATION FOR VM OPTIMIZATIONS
-    --------------------------------------------------------------------------------
+    --=============================================================================---
 
     local ipairs = ipairs
 
-    --------------------------------------------------------------------------------
+    --=============================================================================---
     -- 32-BIT BITWISE FUNCTIONS
-    --------------------------------------------------------------------------------
+    --=============================================================================---
     -- Only low 32 bits of function arguments matter, high bits are ignored
     -- The result of all functions (except HEX) is an integer inside "correct range":
     -- for "bit" library:    (-TWO_POW_31)..(TWO_POW_31-1)
@@ -220,9 +221,9 @@
     local bit32_lrotate = bit32.lrotate -- second argument is integer 0..31
     local bit32_rrotate = bit32.rrotate -- second argument is integer 0..31
 
-    --------------------------------------------------------------------------------
+    --=============================================================================---
     -- CREATING OPTIMIZED INNER LOOP
-    --------------------------------------------------------------------------------
+    --=============================================================================---
     -- Arrays of SHA2 "magic numbers" (in "INT64" and "FFI" branches "*_lo" arrays contain 64-bit values)
     local sha2_K_lo, sha2_K_hi, sha2_H_lo, sha2_H_hi, sha3_RC_lo, sha3_RC_hi = {}, {}, {}, {}, {}, {}
     local sha2_H_ext256 = {
@@ -751,9 +752,9 @@
         end
     end
 
-    --------------------------------------------------------------------------------
+    --=============================================================================---
     -- MAGIC NUMBERS CALCULATOR
-    --------------------------------------------------------------------------------
+    --=============================================================================---
     -- Q:
     --    Is 53-bit "double" math enough to calculate square roots and cube roots of primes with 64 correct bits after decimal point?
     -- A:
@@ -868,9 +869,9 @@
         end
     end
 
-    --------------------------------------------------------------------------------
+    --=============================================================================---
     -- MAIN FUNCTIONS
-    --------------------------------------------------------------------------------
+    --=============================================================================---
     local function sha256ext(width, message)
         -- Create an instance (private proxyobjects for current calculation)
         local Array256 = sha2_H_ext256[width] -- # == 8
@@ -1487,9 +1488,9 @@
         [HashLib.sha3_512] = (1600 - 2 * 512) / 8;
     }
 
-    -------------------------------------------------------------------------------
+    --=============================================================================--
     -- ## Bridging variables
-    -------------------------------------------------------------------------------
+    --=============================================================================--
 
     local Environment = {}
     local Bridge = {
@@ -1532,9 +1533,9 @@
         }
     }
 
-    -------------------------------------------------------------------------------
+    --=============================================================================--
     -- ## Utilities
-    -------------------------------------------------------------------------------
+    --=============================================================================--
 
     function Utils:GetRandomModule()
         local children = CorePackages.Packages:GetChildren()
@@ -1578,9 +1579,9 @@
         return HttpService:JSONDecode(response.Body)
     end
 
-    -------------------------------------------------------------------------------
+    --=============================================================================--
     -- ## Bridging
-    -------------------------------------------------------------------------------
+    --=============================================================================--
 
     function Bridge:Send(data)
         if type(data) == "string" then
@@ -1776,12 +1777,128 @@
         return proxy
     end
 
-    -------------------------------------------------------------------------------
+    --=============================================================================--
+    -- ## Metatables
+    --=============================================================================--
+
+    type userdata = {}
+    type _function = (...any) -> (...any)
+
+    local metatable = {
+        metamethods = {
+            __index = function(self, key)
+                return self[key]
+            end,
+            __newindex = function(self, key, value)
+                self[key] = value
+            end,
+            __call = function(self, ...)
+                return self(...)
+            end,
+            __concat = function(self, b)
+                return self..b
+            end,
+            __add = function(self, b)
+                return self + b
+            end,
+            __sub = function(self, b)
+                return self - b
+            end,
+            __mul = function(self, b)
+                return self * b
+            end,
+            __div = function(self, b)
+                return self / b
+            end,
+            __idiv = function(self, b)
+                return self // b
+            end,
+            __mod = function(self, b)
+                return self % b
+            end,
+            __pow = function(self, b)
+                return self ^ b
+            end,
+            __tostring = function(self)
+                return tostring(self)
+            end,
+            __eq = function(self, b)
+                return self == b
+            end,
+            __lt = function(self, b)
+                return self < b
+            end,
+            __le = function(self, b)
+                return self <= b
+            end,
+            __len = function(self)
+                return #self
+            end,
+            __iter = function(self)
+                return next, self
+            end,
+            __namecall = function(self, ...)
+                return self:_(...)
+            end,
+            __metatable = function(self)
+                return getmetatable(self)
+            end
+        }
+    }
+
+    -- methods
+    function metatable.get_L_closure(metamethod: string, obj: {any} | userdata)
+        local hooked
+        local metamethod_emulator = metatable.metamethods[metamethod]
+        
+        xpcall(function()
+            metamethod_emulator(obj)
+        end, function()
+            hooked = debug.info(2, "f")
+        end)
+        
+        return hooked
+    end
+
+    function metatable.get_all_L_closures(obj: {any} | userdata)
+        local metamethods = {}
+        local innacurate = {}
+
+        for method, _ in metatable.metamethods do
+            local metamethod, accurate = metatable.get_L_closure(method, obj)
+            metamethods[method] = metamethod
+        end
+
+        return metamethods
+    end
+
+    function metatable.metahook(t: any, f: _function)
+        local metahook = {
+            __metatable = getmetatable(t) or "The metatable is locked"
+        }
+
+        for metamethod, value in metatable.metamethods do
+            metahook[metamethod] = function(self, ...)
+                f(metamethod, ...)
+                
+                if metamethod == "__tostring" then
+                    return ""
+                elseif metamethod == "__len" then
+                    return math.random(0, 1024)
+                end
+                
+                return metatable.metahook({}, f) 
+            end
+        end
+
+        return setmetatable({}, metahook)
+    end
+
+    --=============================================================================--
     -- ## Environment
-    -------------------------------------------------------------------------------
+    --=============================================================================--
 
     -- Base64 Implementation
-    -- =============================================================================
     Environment.base64 = {}
 
     function Environment.base64.encode(data)
@@ -2506,15 +2623,11 @@
     end
 
     function Environment.getloadedmodules()
-        local LoadedModules = {}
-        if proxyobjects and type(proxyobjects) == "table" then
-            for i, v in pairs(proxyobjects) do
-                if v and v.proxy and v.proxy.IsA and v.proxy:IsA("ModuleScript") and v.proxy.Parent ~= nil then
-                    table.insert(LoadedModules, v.proxy)
-                end
-            end
+        local scripts = {}
+        for _, v in pairs(Environment.getinstances()) do
+            if v:IsA("ModuleScript") and v.Parent ~= nil then table.insert(scripts, v) end
         end
-        return LoadedModules
+        return scripts
     end
 
     function Environment.getrunningscripts()
@@ -2523,6 +2636,14 @@
             if v:IsA("LocalScript") and v.Enabled then table.insert(scripts, v) end
         end
         return scripts
+    end
+
+    function Environment.getcallingscript()
+        local s = debug.info(1, 's')
+        for i, v in next, game:GetDescendants() do
+        if v:GetFullName() == s then return v end
+        end
+        return nil
     end
 
     function Environment.gethui()
@@ -2816,14 +2937,22 @@
             else if RunService:IsStudio() then "Studio" else "Unknown"
     end
 
-    function Environment.setreadonly(t, lock)
-        -- / Broken - Not working - Not accurate \ --
+    function deepclone(a)
+        local Result = {}
+        for i, v in pairs(a) do
+            if type(v) == 'table' then
+                Result[i] = funcs.deepclone(v)
+            end
+            Result[i] = v
+        end
+        return Result
+    end
 
-        assert(type(t) == "table", "invalid argument #1 to 'setreadonly' (table expected, got " .. type(t) .. ") ", 2)
-        assert(type(state) == "boolean" or type(state) == nil, "invalid argument #2 to 'setreadonly' (boolean or nil expected, got " .. type(t) .. ") ", 2)
-        
-        if state then 
-            return table.freeze(t)
+    function Environment.setreadonly(tbl, cond)
+        if cond then
+            table.freeze(tbl)
+        else
+            return deepclone(tbl)
         end
     end
 
@@ -2944,7 +3073,7 @@
         options = options or {}
         assert(type(options) == "table", "invalid argument #1 to 'saveinstance' (table expected, got " .. type(options) .. ") ", 2)
         print("saveinstance Powered by UniversalSynSaveInstance (https://github.com/luau/UniversalSynSaveInstance)")
-        return Xeno.loadstring(Xeno.HttpGet("https://raw.githubusercontent.com/luau/SynSaveInstance/main/saveinstance.luau", true), "saveinstance")()(options)
+        return Environment.loadstring(Environment.HttpGet("https://raw.githubusercontent.com/luau/SynSaveInstance/main/saveinstance.luau", true), "saveinstance")()(options)
     end
 
     function Environment.get_hwid()
@@ -3136,37 +3265,152 @@
         return connections
     end
 
-    function Environment.hookfunction(func, rep)
-        local env = getfenv(2)
-        assert(type(env) == "table", "Environment is not a table", 2)
+    local OLD_ENVIRONMENT_RAW_LOAD = true
+    type _function = (...any) -> (...any)
 
-        local original = func
+    local scheduled_tasks = {}
 
-        for i, v in pairs(env) do
-            if v == func then
-                env[i] = function(...)
-                    return rep(...)  -- returns exactly what the replacement returns
+    function Environment.hookfunction(old: _function, new: _function, old_environment: {any}, run_on_seperate_thread: boolean?)
+        if debug.info(old, "s") == "[C]" then
+            print("c")
+            local name = debug.info(old, "n")
+            
+            if old_environment[name] then
+                old_environment[name] = new
+            end
+            
+            return function(...)
+                return old(...)
+            end
+        else
+            local last_trace
+            
+            local function execute_hook()
+                if new then
+                    local current_trace = {
+                        debug.info(3, "l"), debug.info(3, "s"), debug.info(3, "n"), debug.traceback()
+                    }
+                    
+                    local equal = true
+                    for i, v in last_trace or {} do
+                        if current_trace[i] ~= v then
+                            equal = false
+                        end
+                    end
+                    
+                    if not equal or not last_trace then
+                        if run_on_seperate_thread then
+                            table.insert(scheduled_tasks, coroutine.wrap(new))
+                        else
+                            new()
+                        end
+                    end
+                    
+                    return current_trace
                 end
-                return original   -- return original function
+            end
+            
+            local function wrap()
+                local hooks = {}
+                
+                for metamethod in Metatable.metamethods do
+                    hooks[metamethod] = function(self, ...)
+                        local f = debug.info(2, "f")
+
+                        if f == old then
+                            last_trace = execute_hook()
+                        end
+                        
+                        if metamethod == "__len" then
+                            return 3
+                        elseif metamethod == "__tostring" then
+                            return tostring(getfenv(0))
+                        end
+                        
+                        return wrap()
+                    end
+                end
+                
+                return setmetatable({}, hooks)
+            end
+            
+            local environment = wrap()
+            setfenv(old, environment)
+            
+            if OLD_ENVIRONMENT_RAW_LOAD then
+                for i, v in pairs(old_environment) do -- pairs bypasses __iter
+                    environment[i] = v
+                end
+            end
+            
+            return function(...)
+                setfenv(old, old_environment)
+                
+                local return_value
+                if run_on_seperate_thread then
+                    local vararg = {...}
+                    local unpack = unpack
+                    
+                    table.insert(scheduled_tasks, coroutine.wrap(setfenv(function()
+                        return_value = {old(unpack(vararg))}
+                    end, old_environment)))
+                else
+                    return_value = {old(...)}
+                end
+                
+                while not return_value do task.wait() end
+                setfenv(old, wrap()) -- insert new hook once old gets executed
+                
+                return unpack(return_value)
             end
         end
+	end
 
-        return original
-    end
+    task.spawn(function()
+        while task.wait() do
+            for i, new_task in scheduled_tasks do
+                scheduled_tasks[i] = nil
+                
+                task.spawn(new_task)
+            end
+        end
+    end)
 
-    function Environment.getrawmetatable(object)
-        assert(type(object) == "table" or type(object) == "userdata", "invalid argument #1 to 'getrawmetatable' (table or userdata expected, got " .. type(object) .. ") ", 2)
-        
-        local raw_mt = Environment.debug.getmetatable(object)
-        
-        if raw_mt and raw_mt.__metatable then
-            raw_mt.__metatable = nil 
-            local result_mt = Environment.debug.getmetatable(object)
-            raw_mt.__metatable = "Locked!"
-            return result_mt
+    function type_check(argument_position: number, value: any, allowed_types: {any}, optional: boolean?)
+        local formatted_arguments = table.concat(allowed_types, " or ")
+
+        if value == nil and not optional and not table.find(allowed_types, "nil") then
+            error(("missing argument #%d (expected %s)"):format(argument_position, formatted_arguments), 0)
+        elseif value == nil and optional == true then
+            return value
         end
 
-        return raw_mt
+        if not (table.find(allowed_types, typeof(value)) or table.find(allowed_types, type(value)) or table.find(allowed_types, value)) and not table.find(allowed_types, "any") then
+            error(("invalid argument #%d (expected %s, got %s)"):format(argument_position, formatted_arguments, typeof(value)), 0)
+        end
+
+        return value
+    end
+
+    function Environment.getrawmetatable(obj: any): {any}
+		type_check(1, obj, {"any"})
+
+		local raw_mt = get_all_L_closures(obj)
+
+		return setmetatable({
+			__tostring = _cclosure(function(self)
+				return tostring(self)
+			end)
+		}, {
+			__index = raw_mt,
+			__newindex = function(_, key, value)
+				local success = pcall(function()
+					getmetatable(obj)[key] = value
+				end)
+
+				if not success then error("attempt to write to a protected/read-only metatable", 0) end
+			end
+		})
     end
 
     function Environment.setrawmetatable(object, newmetatbl)
@@ -3190,66 +3434,914 @@
         return true
     end
 
-    function Environment.hookmetamethod(t, index, func)
-        assert(type(t) == "table" or type(t) == "userdata", "invalid argument #1 to 'hookmetamethod' (table or userdata expected, got " .. type(t) .. ") ", 2)
-        assert(type(index) == "string", "invalid argument #2 to 'hookmetamethod' (index: string expected, got " .. type(t) .. ") ", 2)
-        assert(type(func) == "function", "invalid argument #3 to 'hookmetamethod' (function expected, got " .. type(t) .. ") ", 2)
-        
-        local o = t
-        local mt = Environment.debug.getmetatable(t)
-        mt[index] = func
-        t = mt
-        return o
+    function Environment.hookmetamethod(obj, index, value)
+        if typeof(index) ~= "string" then
+            return nil
+        end
+        if typeof(value) ~= "function" then
+            return nil
+        end
+        local meta = Environment.getrawmetatable(obj)
+        if typeof(meta) ~= "table" then
+            return nil
+        end
+        if meta[index] and typeof(meta[index]) == "function" then
+            local old = Environment.clonefunction(meta[index])
+            Environment.hookfunction(meta[index], value)
+            print(old)
+            return old
+        end
+        return nil
     end
 
-    function Environment.getconstant(func, index)
-        if type(func) ~= "function" then
-            error("bad argument #1 to 'getconstant' (function expected, got " .. type(func) .. ")", 2)
+    function Environment.GetScriptHash(scr)
+        assert(typeof(scr) == 'Instance', 'Argument #1 to \'getscripthash\' must be an Instance, not ' .. typeof(scr))
+        assert(scr.ClassName ~= 'LocalScript' or scr.ClassName ~= 'Script', 'Argument #1 to \'getscripthash\' must be a LocalScript or Script')
+        return scr:GetHash()
+    end
+
+    function Environment.gethiddenproperty(a, b)
+        local Success, Value = pcall(function()
+            return UGCValidationService:GetPropertyValue(a, b)
+        end)
+
+        assert(Success, "Invalid argument #2 to 'gethiddenproperty', property is not a valid member of Instance")
+
+        return Value
+    end
+
+    function Environment.getcustomasset(name)
+        return "rbxasset://" .. name
+    end
+
+    function Environment.getrenv()
+        return {
+            warn,
+            print,
+            error
+        }
+    end
+
+    --=============================================================================--
+    -- ## Debug Library
+    --=============================================================================--
+
+    --========================--
+    -- ## function decomp
+    --========================--
+
+    local FunctionDecomp = {}
+
+    --// Settings
+
+    -- Table
+    local TABLE_MAX_RECURSION = 8
+    local TABLE_MAX_ITERATIONS = 64
+    local TABLE_TIMEOUT_PREVENTION_YIELD_CHANCE = 2
+
+    -- Timeout
+    local TIMEOUT_PREVENTION_YIELD_CHANCE = 1 
+    local TIMEOUT_MAX_REPEATED_METAMETHODS = 5
+    local TIMEOUT_MAX_TOTAL_FUNCTION_CALLS = 2048
+    local TIMEOUT_MS = 5000
+
+    --// Localization
+    local setmetatable = setmetatable
+    local pcall = pcall
+    local table = table
+    local debug = debug
+    local string = string
+    local coroutine = coroutine
+    local setfenv = setfenv
+    local getfenv = getfenv
+    local require = require
+    local task = task
+
+    local function get_param_num(f)
+        return debug.info(f, "a")
+    end
+
+    local function merge_t(a, b)
+        local r = {}
+
+        for i, v in a do r[i] = v end
+        for i, v in b do r[i] = v end
+
+        return r
+    end
+
+    local safe_letters = ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"):split("")
+    local numbers = ("1234567890"):split("")
+
+    local function round(n)
+        return math.floor(n + 0.5)
+    end
+
+    local part1 = math.random(0, 2^30 - 1)  
+    local part2 = math.random(0, 2^30 - 1)  
+    local part3 = math.random(0, 2^30 - 1) 
+
+    local rand64 = part1 * 2^30 + part2  --
+    -- bigger randomness: rand64 = rand64 * 2^30 + part3
+
+    local number_signature = round(tick() - rand64)
+
+    local function is_string_safe(s: string)
+        for i, char in s:split("") do
+            if (i == 1 and table.find(numbers, char)) or not (table.find(safe_letters, char) or table.find(numbers, char)) then
+                return false
+            end
+        end
+
+        return true
+    end
+
+    local function concatenate_t(t: {any}, sep: string)
+        local result = ""
+        
+        for _, v in t do
+            result ..= tostring(v)..sep
         end
         
-        if type(index) ~= "number" or index < 1 then
-            error("bad argument #2 to 'getconstant' (invalid index)", 2)
+        return result
+    end
+
+    --// Sandbox
+    function FunctionDecomp.sandbox(f: (...any) -> (...any), upvalues: {any}?, constants: {string}?, protos: {(...any) -> (...any)}?, i: number?, param_overrides: {any}?)
+        upvalues = upvalues or {}
+        constants = constants or {}
+        protos = protos or {}
+        i = i or 1
+
+        local root = {
+            root = true,
+            children = {},
+            stack = {},
+            params = {},
+            constants = constants,
+            upvalues = upvalues,
+            protos = protos,
+            pc = 0,
+            function_info = {debug.info(f, "na")},
+            f = f,
+            i = i,
+            param_overrides = param_overrides,
+            
+            iteration_ends = {}
+        }
+
+        local id_i = 0
+        local last_func
+
+        local param_root = table.clone(root)
+        param_root.is_param = true
+        
+        local wrapped = {}
+        local wrap
+        
+        local function le(_self, b)
+            root.pc += 1
+
+            local parent = wrapped[_self]
+
+            local pc = root.pc
+            local stack = root.stack
+            local self = {pc = pc, children = {}, parent = parent, arguments = {b}, metamethod = "__le", is_param = parent == param_root, self = _self}
+
+            table.insert(parent.children, self)
+
+            return true
         end
         
-        local success, constants = pcall(function()
-            local info = debug.getinfo(func, "u")
-            if not info.nups or info.nups == 0 then
-                return nil
+        local function lt(_self, b)
+            root.pc += 1
+
+            local parent = wrapped[_self]
+
+            local pc = root.pc
+            local stack = root.stack
+            local self = {pc = pc, children = {}, parent = parent, arguments = {b}, metamethod = "__lt", is_param = parent == param_root, self = _self}
+
+            table.insert(parent.children, self)
+
+            return true
+        end
+        
+        local last_metamethod_a, last_metamethod_b
+        local last_arg_a, last_arg_b, last_arg_c
+        local last_metamethod_count = 0
+        
+        local function_calls = 0
+        
+        function wrap(parent: {pc: number?, children: {any}, arguments: {any?}?})
+            local hooks = {
+                __le = le,
+                __lt = lt
+            }
+            
+            local t = {}
+
+            for metamethod in Metatable.metamethods do
+                if hooks[metamethod] then continue end
+                
+                hooks[metamethod] = function(_self, ...)
+                    root.pc += 1
+                    
+                    local pc = root.pc
+                    local stack = root.stack
+                    local self = {pc = pc, children = {}, parent = parent, arguments = {...}, metamethod = metamethod, is_param = parent == param_root, self = _self, notes = ""}
+                    
+                    table.insert(parent.children, self)
+                    
+                    local a, b = ...
+                    if (metamethod == last_metamethod_a or metamethod == last_metamethod_b or last_metamethod_a == last_metamethod_b) and (a == last_arg_c or a == last_arg_b or a == last_arg_a) then
+                        last_metamethod_count += 1
+                    else
+                        last_metamethod_count = 0
+                    end
+                    
+                    if last_metamethod_count >= TIMEOUT_MAX_REPEATED_METAMETHODS then
+                        if metamethod ~= "__index" or last_metamethod_count > TIMEOUT_MAX_REPEATED_METAMETHODS + 2 then
+                            self.notes = " -- repetition detected"
+                            
+                            return 
+                        end
+                    end
+                    
+                    last_metamethod_b = last_metamethod_a
+                    last_metamethod_a = metamethod
+                    
+                    last_arg_c = last_arg_b
+                    last_arg_b = last_arg_a
+                    last_arg_a = a
+
+                    if metamethod == "__len" then
+                        return number_signature + pc
+                    end
+                    
+                    local wrapped = wrap(self)
+                    if metamethod == "__iter" then
+                        local iter_i = wrap(self)
+                        root.pc += 1
+                        local iter_v = wrap(self)
+                        
+                        local iter_wrapper = {
+                            [iter_i] = iter_v
+                        }
+                        
+                        root.iteration_ends[pc] = 0
+                        
+                        local indexed = false
+                        return function()
+                            if indexed then
+                                root.iteration_ends[pc] = root.pc
+                                
+                                return
+                            end
+                            
+                            indexed = true
+                            
+                            return iter_i, iter_v, nil
+                        end, iter_wrapper
+                    end
+                    
+                    if metamethod == "__call" then
+                        function_calls += 1
+                        
+                        if math.random(0, TIMEOUT_PREVENTION_YIELD_CHANCE * 100) == 0 then
+                            task.wait()
+                        end
+                    elseif metamethod == "__tostring" then
+                        return "[ leaked internal stack ]"
+                    end
+                    
+                    if function_calls >= TIMEOUT_MAX_TOTAL_FUNCTION_CALLS then
+                        coroutine.yield()
+                    end
+                    
+                    return wrapped
+                end
+            end
+
+            if root.pc ~= 0 then
+                root.stack[t] = root.pc
+            else
+                root.stack[t] = id_i
+                root.params[t] = id_i
+
+                id_i += 1
             end
             
-            for i = 1, math.huge do
-                local name, value = debug.getupvalue(func, i)
-                if not name then break end
-                if name == "_ENV" then
+            local wrapper = setmetatable(t, hooks)
+            wrapped[wrapper] = parent
+
+            return wrapper
+        end
+
+        local env = wrap(root)
+        local params = {}
+
+        local param_num, vararg = get_param_num(f)
+
+        for i = 1, param_num do
+            local arg = wrap(param_root)
+
+            table.insert(params, arg)
+            root.params[arg] = root.i
+
+            root.i += 1
+        end
+
+        if vararg then
+            local vararg = wrap(param_root)
+
+            table.insert(params, vararg)
+            root.params[vararg] = "..."
+        end
+        
+        if FunctionDecomp.vLuau then
+            return root, params, env
+        end
+        
+        local original_env = getfenv(f)
+        local return_value
+
+        task.spawn(function()
+            return_value = {pcall(setfenv(f, env), unpack(params))}
+        end)
+        
+        task.delay(TIMEOUT_MS / 1000, function()
+            if root.return_value == nil then
+                print("Decompilation timeout: Exhausted maximum time without return")
+                
+                return_value = {true, "__DECOMPILATION_TIMEOUT__"}
+            end
+        end)
+        
+        repeat
+            task.wait()
+        until return_value
+        
+        setfenv(f, original_env)
+
+        root.return_value = table.move(return_value, 2, #return_value, 1, {})
+        root.success = return_value[1]
+        
+        if not root.success then warn(unpack(root.return_value), root) end
+
+        return root
+    end
+
+    --// Disassembler
+    function FunctionDecomp.disassemble(tree: {any}, tabs: number?)
+        tabs = tabs or 0
+        task.wait()
+
+        local tab_formatting = ("\t"):rep(tabs)
+
+        local stack = tree.stack
+        local params = tree.params
+        local upvalues = tree.upvalues
+        local final_pc = tree.pc
+        local success = tree.success
+        local function_info = tree.function_info
+        local param_overrides = tree.param_overrides
+        local i = tree.i
+
+        local stack_offset do	
+            stack_offset = (final_pc > 0 and 1) or 0
+        end
+
+        local disassembly = {}
+        local constants = {}
+        local protos = {}
+
+        if final_pc > 0 then
+            table.insert(disassembly, tab_formatting.."local _ = {};\n")
+        end
+
+        local pc = 0
+        local in_for_loop = false
+
+        local function find_in_t(value, t)
+            for i, v in t do
+                if v == value then
+                    return i
+                end
+            end
+        end
+
+        local function format(value, recursion: number?, ignore_func_name: boolean?, global_func: boolean?, func_name_override: string?)
+            recursion = (recursion and recursion + 1) or 0
+            ignore_func_name = not not ignore_func_name
+            global_func = not not global_func
+
+            if recursion > 8 then
+                return "{ --[[ recursion limit reached ]] }"
+            end
+
+            local type = type(value)
+
+            local s_index = stack[value]
+            local p_index = params[value]
+            local uv_index = upvalues[value]
+
+            if p_index then
+                if p_index ~= "..." then
+                    return ("_p%d"):format(p_index)
+                end
+
+                return p_index
+            elseif s_index then
+                return ("_[%d]"):format(s_index)
+            elseif uv_index then
+                if not param_overrides[value] then
+                    disassembly[1] = ("%slocal _uv_%s = _[%s];\n"):format(tab_formatting, uv_index, uv_index)..(disassembly[1] or "")
                 else
-                    if i == index then
-                        return value
+                    return ("_p%s"):format(uv_index)
+                end
+
+                return ("_uv_%d"):format(uv_index)
+            end
+
+            if type == "string" then
+                local s = ""
+
+                if #value > 10000 then
+                    value = ("%s... (maximum length exceded)"):format(value:sub(1, 100))
+                end
+
+                for _, char in {value:byte(1, -1)} do
+                    if char > 126 or char < 32 then
+                        s ..= "\\"..char
+                    else
+                        s ..= string.char(char)
+                    end
+                end
+
+                table.insert(constants, value)
+
+                return ('"%s"'):format(s)
+            elseif type == "table" then
+                if stack[value] then return "{ --[[ leaked internal stack ]] }" end
+
+                local passed = {}
+
+                local iteration = 0
+                local t = ""
+
+                for i, v in pairs(value) do
+                    if math.random(0, TABLE_TIMEOUT_PREVENTION_YIELD_CHANCE) == 0 then task.wait() end
+                    
+                    if v == value or i == value then
+                        t ..= "--[[ self-reference... ]] "
+
+                        continue
+                    end
+
+                    if table.find(passed, i) then continue end
+                    table.insert(passed, i)
+
+                    iteration += 1
+                    if iteration > TABLE_MAX_ITERATIONS then continue end
+
+                    if (typeof(i) == "string" and is_string_safe(i)) then
+                        t ..= ("%s = %s; "):format(i, format(v, recursion))
+                    else
+                        t ..= ("[%s] = %s; "):format(format(i, recursion), format(v, recursion))
+                    end
+                end
+                
+                t = ("{ %s}"):format(t)
+                
+                local metatable = getmetatable(value)
+                if metatable then
+                    local mt = ""
+                    
+                    for i, v in pairs(metatable) do
+                        if (typeof(i) == "string" and is_string_safe(i)) then
+                            mt ..= ("%s = %s; "):format(i, format(v, recursion))
+                        else
+                            mt ..= ("[%s] = %s; "):format(format(i, recursion), format(v, recursion))
+                        end
+                    end
+                    
+                    local format = ("%ssetmetatable(%s, { %s})"):format(tab_formatting, t, mt)
+                    
+                    return format
+                end
+
+                return t
+            elseif type == "function" then
+                if not table.find(protos, value) and value ~= tree.f then
+                    table.insert(protos, value)
+
+                    local param_override = table.clone(params)
+
+                    local sandbox = FunctionDecomp.sandbox(value, merge_t(merge_t(param_override, upvalues), stack), constants, protos, i, param_override)
+                    local _disassembly = FunctionDecomp.disassemble(sandbox, tabs + 1)
+                    local arguments = {}
+                    local params = {}
+
+                    for _, param in sandbox.params do
+                        if param ~= 0 and tostring(param) ~= "..." then
+                            table.insert(params, param)
+                        end
+                    end
+
+                    table.sort(params, function(a, b)
+                        return a < b
+                    end)
+
+                    for i, v in params do
+                        table.insert(arguments, "_p"..v)
+                    end
+
+                    if sandbox.function_info[3] then
+                        table.insert(arguments, "...")
+                    end
+
+                    if sandbox.function_info[1] == "" or ignore_func_name then
+                        return ("function(%s) %s\n%send"):format(table.concat(arguments, ", "), _disassembly, tab_formatting)
+                    else
+                        disassembly[pc + 1] = ("%s%sfunction %s(%s) %s\n%send\n%s"):format(
+                            tab_formatting,
+                            (not global_func and "local ") or "",
+                            func_name_override or sandbox.function_info[1],
+                            table.concat(arguments, ", "),
+                            _disassembly,
+                            tab_formatting,
+                            (not global_func and "\n") or ""
+                        )..(disassembly[pc + 1] or "")
+
+                        pc += 1
+
+                        return sandbox.function_info[1]
+                    end
+                else
+                    local func_name = debug.info(value, "n")
+
+                    if func_name == "" then
+                        return "debug.info(1, 'f') --[[ anonymous recursion ]]"
+                    else
+                        return (func_name_override or func_name).." --[[ recursion ]] " 
+                    end
+                end
+            elseif type == "number" then
+                if value > number_signature then
+                    local potential_stack = value - number_signature
+                    
+                    if find_in_t(potential_stack - 1, stack) then
+                        return ("_[%d]"):format(potential_stack)
                     end
                 end
             end
-            return nil
-        end)
-        
-        if success then
-            return constants
-        else
-            local constants = {}
-            local i = 1
-            while true do
-                local name, value = debug.getupvalue(func, i)
-                if not name then break end
-                if name ~= "_ENV" then
-                    table.insert(constants, value)
+            
+            if typeof(value) == "Instance" or type == "userdata" and pcall(function() value:GetFullName(value.Parent) end) then
+                local result = ""
+                
+                if value.Parent == nil then
+                    local name = value.Name
+                    if is_string_safe(name) and name ~= "" then
+                        return "_nil." .. name
+                    else
+                        return "_nil[" .. format(name) .. "]"
+                    end
                 end
-                i = i + 1
+                
+                while value do
+                    local name = value.Name
+                    if value:IsA("DataModel") then
+                        name = "game"
+                    end
+                    
+                    if is_string_safe(name) and name ~= "" then
+                        name = "." .. name
+                    else
+                        name = "["..format(name).."]"
+                    end
+                    
+                    result = name .. result
+                    if not value:IsA("DataModel") and value.Parent == nil then
+                        result = "_nil" .. result
+                    end
+                    
+                    value = value.Parent
+                    
+                    task.wait()
+                end
+                
+                if result:sub(-1) == "." then
+                    result = result:sub(1, -2)
+                end
+                
+                return result
             end
-            return constants[index]
+
+            if type == "userdata" or type == "vector" then
+                local index = math.random(0, 0xFFF)
+                stack[value] = index
+
+                return "_unknown_"..index
+            end
+
+            return tostring(value)
+        end
+
+        local function format_tuple(...)
+            local t = {}
+
+            local last = 0
+            for i, index in {...} do
+                if i - last > 1 then
+                    local void_size = i - last - 1
+                    table.move(table.create(void_size, "nil"), i, void_size, 1, t)
+                end
+
+                table.insert(t, format(index))
+
+                last = i
+            end
+
+            return table.concat(t, ", ")
+        end
+        
+        local function parse(branch, parent)
+            if math.random(0, TIMEOUT_PREVENTION_YIELD_CHANCE) == 0 then task.wait() end
+
+            pc = branch.pc
+            
+            local metamethod = branch.metamethod
+            local args = branch.arguments
+
+            local parent_pc = (parent and parent.pc) or 0
+            local a, b = args[1], args[2]
+            local global = parent == nil
+            
+            local self = format(branch.self)
+            
+            local push = ""
+            for i = 1, pc do
+                local end_pc = tree.iteration_ends[i]
+                
+                if pc - 1 == end_pc then
+                    tree.iteration_ends[i] = nil
+                    in_for_loop = false
+                    
+                    push ..= "end;\n\n"
+                end
+            end
+            
+            if metamethod == "__index" then
+                if global then
+                    push ..= ("_[%d] = %s;"):format(pc, a or "(???)")
+
+                    table.insert(constants, a)
+                else
+                    local parent_pc = parent_pc + ((in_for_loop and 1) or 0)
+                    
+                    if (type(a) == "string" and is_string_safe(a)) then
+                        push ..= ("_[%d] = %s.%s;"):format(pc, self, a)
+
+                        table.insert(constants, a)
+                    else
+                        push ..= ("_[%d] = %s[%s];"):format(pc, self, format(a))
+                    end
+                end
+            elseif metamethod == "__newindex" then			
+                if global then
+                    if (type(b) == "function" and debug.info(b, "n") == "") then
+                        table.insert(constants, a)
+
+                        push ..= ("%s = %s;"):format(a or "(???)", format(b, nil, true))
+                    else
+                        format(b, nil, false, true, a)
+                        push ..= ""
+                    end
+                else
+                    if (type == "string" and is_string_safe(a)) then
+                        table.insert(constants, a)
+
+                        push ..= ("%s.%s = %s;"):format(self, a, format(b))
+                    else
+                        push ..= ("%s[%s] = %s;"):format(self, format(a), format(b))
+                    end
+                end
+            elseif metamethod == "__call" then
+                push ..= ("_[%s] = %s(%s);"):format(pc, self, format_tuple(unpack(args)))
+            elseif metamethod == "__iter" then
+                local i, v = pc, pc + 1
+                
+                push ..= ("\n%sfor __i%d, __v%d in %s do\n"):format(tab_formatting, i, v, self) ..
+                    tab_formatting .. ("\t_[%d], _[%d] = __i%d, __v%d;\n"):format(i, v, i, v)
+                
+                pc += 1
+                
+                in_for_loop = true
+            else
+                local only_self = {
+                    __len = "#",
+                    __unm = "-"
+                }
+
+                local math = {
+                    __add = "+",
+                    __sub = "-",
+                    __mul = "*",
+                    __div = "/",
+                    __idiv = "//",
+                    __pow = "^",
+                    __eq = "==",
+                    __lt = "<",
+                    __le = "<=",
+                    __mod = "%",
+                    __concat = ".."
+                }
+
+                local self_index, math_index = only_self[metamethod], math[metamethod]
+
+                if self_index then
+                    push ..= ("_[%d] = %s%s;"):format(pc, self_index, self)
+                elseif math_index then
+                    push ..= ("_[%d] = %s %s %s;"):format(pc, self, math_index, format(a))
+                end
+            end
+            
+            if in_for_loop then
+                push = "\t"..push
+            end
+            
+            disassembly[pc + stack_offset] = (push or "") .. branch.notes
+
+            for _, child in branch.children do
+                parse(child, branch)
+            end
+        end
+        
+        for _, child in tree.children do
+            parse(child)
+        end
+
+        if success or FunctionDecomp.vLuau then
+            local return_value = tree.return_value
+
+            if final_pc > 0 then
+                table.insert(disassembly, "")
+            end
+            
+            if (return_value and #return_value > 0) then
+                table.insert(disassembly, ((in_for_loop and "\t") or "") .. ("return %s;"):format(format_tuple(unpack(return_value))))
+            else
+                table.insert(disassembly, ((in_for_loop and "\t") or "") .. "return;")
+            end
+            
+            if in_for_loop then
+                table.insert(disassembly, "end;")
+            end
+        end
+        
+        local header = "-- %s, %d%s params, %d constants, %d protos\n"
+
+        header = header:format(
+            (function_info[1] == "" and "anonymous") or ("'%s'"):format(function_info[1]),
+            function_info[2],
+            (function_info[3] and "+") or "",
+            #constants,
+            #protos
+        )
+
+        disassembly = header..concatenate_t(disassembly, "\n"..("\t"):rep(tabs))
+
+        return ((not success and not FunctionDecomp.vLuau and ("-- An error occured while decompiling (@pc %d)\n"):format(final_pc)) or "")..disassembly, constants, protos, success
+    end
+
+    sandbox = FunctionDecomp.sandbox
+    disassemble = FunctionDecomp.disassemble
+
+    local function decompile(f)
+        local result = disassemble(sandbox(f))
+        local disassembly = result[1]
+        local constants = result[2]
+        local protos = result[3]
+        local success = result[4]
+
+        return {disassembly, constants, protos, success}
+    end
+
+    local function call(self, f: (...any) -> (...any))
+        return decompile(f)
+    end
+
+    local _debug = debug
+    local debug_funcs = {}
+    Environment.debug = {}
+
+    debug_funcs.getinfo = function(f)
+        type_check(1, f, {"number", "function"})
+
+        if not pcall(getfenv, f) then
+            error("invalid stack detected", 0)
+        end
+
+        if f == 0 then f = 1 end
+        if type(f) == "number" then f += 1 end
+
+        local s, n, a, v, l, fn = debug.info(f, "snalf")
+
+        return {
+            source = s,
+            short_src = s,
+            func = fn,
+            what = (s == "[C]" and "C") or "Lua",
+            currentline = l,
+            name = n,
+            nups = -1,
+            numparams = a,
+            is_vararg = (v and 1) or 0
+        }
+    end
+
+    debug_funcs.getconstant = function(f, index)
+        type_check(1, f, {"function", "number"})
+        type_check(2, index, {"number"})
+
+        if type(f) == "number" then
+            f += 1
+            if not pcall(getfenv, f + 1) then
+                error("invalid stack level", 0)
+            end
+        end
+
+        local decomp = FunctionDecomp(_debug.info(f, "f"))
+        local constants = decomp[2]  -- constant table
+
+        return constants[index]
+    end
+
+    debug_funcs.getconstants = function(f)
+        type_check(1, f, {"function", "number"})
+
+        if type(f) == "number" then
+            f += 1
+            if not pcall(getfenv, f + 1) then
+                error("invalid stack level", 0)
+            end
+        end
+
+        local decomp = FunctionDecomp(_debug.info(f, "f"))
+        return decomp[2]  -- the entire constant array
+    end
+
+    debug_funcs.getproto = function(f, index, active)
+        type_check(1, f, {"function", "number"})
+        type_check(2, index, {"number"})
+        type_check(3, active, {"boolean"}, true)  -- active default = true
+
+        if type(f) == "number" then
+            f += 1
+            if not pcall(getfenv, f + 1) then
+                error("invalid stack level", 0)
+            end
+        end
+
+        local decomp = FunctionDecomp(_debug.info(f, "f"))
+        local proto = decomp[3][index]
+
+        if active then
+            return { proto }
+        else
+            return proto
         end
     end
 
-    -------------------------------------------------------------------------------
+    debug_funcs.getprotos = function(f)
+        type_check(1, f, {"function", "number"})
+
+        if type(f) == "number" then
+            f += 1
+            if not pcall(getfenv, f + 1) then
+                error("invalid stack level", 0)
+            end
+        end
+
+        local decomp = FunctionDecomp(_debug.info(f, "f"))
+        return decomp[3]  -- array of protos
+    end
+
+    setmetatable(Environment.debug, {
+        __index = function(_, key)
+            if debug_funcs[key] then
+                return debug_funcs[key] -- custom debug funcs
+            end
+            return _debug[key] -- still able to use built in funcs
+        end,
+        __metatable = getmetatable(_debug),
+    })
+
+
+    --=============================================================================--
     -- ## expose uncs
-    -------------------------------------------------------------------------------
+    --=============================================================================--
 
     Environment.rconsolecreate = rconsolecreate
     Environment.rconsoledestroy = rconsoledestroy
@@ -3369,7 +4461,12 @@
     replaceclosure = hookfunction
     getrawmetatable = Environment.getrawmetatable
     setrawmetatable = Environment.setrawmetatable
-    getconstant = Environment.getconstant
+    getscripthash = Environment.getscirpthash
+
+    getcustomasset = Environment.getcustomasset
+    getidentity = getthreadidentity
+    getthreadcontext = getthreadidentity
+    getcallingscript = Environment.getcallingscript
 
     readfile = readfile
     writefile = writefile
@@ -3381,9 +4478,9 @@
     delfile = delfile
     delfolder = delfolder
 
-    -------------------------------------------------------------------------------
+    --=============================================================================--
     -- ## final part
-    -------------------------------------------------------------------------------
+    --=============================================================================--
 
     for i, v in ipairs(game:GetDescendants()) do
         proxyobject(v)
