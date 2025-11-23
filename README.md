@@ -2,7 +2,7 @@
 Level 3 sploit script hijacker
 
 ## Status
-Doesn't work anymore smth like that I haven't felt like fixed it anymore 
+Doesn't work anymore smth like that I haven't felt like fixing it anymore 
 should just be an offset issue
 
 # UNC/SUNC
