@@ -12,7 +12,6 @@ this is a old screenshot
 made with imgui
 
 # Requirements to run this
-Dotnet 9.0 
-Dotnet 9.0 SDK
-changing the batch file and 
-visual Studio 2022 
+dotnet 9.0 ,
+dotnet 9.0 SDK.
+you can use visual studio and build it or use the batch file
