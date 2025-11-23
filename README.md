@@ -14,5 +14,5 @@ made with imgui
 # Requirements to run this
 Dotnet 9.0 
 Dotnet 9.0 SDK
-Changing the bat file
-Visual Studio 2022 (or 2026)
+changing the batch file and 
+visual Studio 2022 
