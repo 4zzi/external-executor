@@ -12,6 +12,6 @@ this is a old screenshot
 made with imgui
 
 # Requirements to run this
-dotnet 9.0 ,
+dotnet 9.0,
 dotnet 9.0 SDK.
 you can use visual studio and build it or use the batch file
