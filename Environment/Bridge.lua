@@ -3112,44 +3112,6 @@
         end)
     end
 
-    --[[function Environment.firetouchinterest(toucher, toTouch, touch_state)
-        assert(typeof(toucher) == "Instance", "invalid argument #1 to 'firetouchinterest' (Instance expected, got " .. type(toucher) .. ") ")
-        assert(typeof(toTouch) == "Instance", "invalid argument #2 to 'firetouchinterest' (Instance expected, got " .. type(toTouch) .. ") ")
-        assert(type(touch_state) == "number", "invalid argument #3 to 'firetouchinterest' (number expected, got " .. type(touch_state) .. ") ")
-
-        if not touchers_reg[toucher] then
-            touchers_reg[toucher] = {}
-        end
-
-        local toTouchAddress = tostring(get_real_address(toTouch))
-
-        if touch_state == 0 then
-            if touchers_reg[toucher][toTouchAddress] then return end
-
-            local newPart = Instance.new("Part", toTouch)
-            newPart.CanCollide = false
-            newPart.CanTouch = true
-            newPart.Anchored = true
-            newPart.Transparency = 1
-
-            Xeno.Xeno.spoof_instance(newPart, toTouch)
-            touchers_reg[toucher][toTouchAddress] = task.spawn(function()
-                while task.wait() do
-                    newPart.CFrame = toucher.CFrame
-                end
-            end)
-        elseif touch_state == 1 then
-            if not touchers_reg[toucher][toTouchAddress] then return end
-            Xeno.Xeno.spoof_instance(toTouch, tonumber(toTouchAddress))
-            local toucher_thread = touchers_reg[toucher][toTouchAddress]
-            task.cancel(toucher_thread)
-            touchers_reg[toucher][toTouchAddress] = nil
-        end
-    end
-    
-    -- todo
-    ]]
-
     function Environment.setsimulationradius(newRadius, newMaxRadius)
         newRadius = tonumber(newRadius)
         newMaxRadius = tonumber(newMaxRadius) or newRadius
