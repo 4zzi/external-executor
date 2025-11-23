@@ -1,7 +1,3 @@
-    -- https://github.com/ChimeraLle-Real/ExternalExecutor/blob/main/ExternalExecutor/Init.lua
-    -- https://github.com/Mitutoyum/roblox-external-executor/blob/main/resources/initscript.lua
-    -- https://github.com/khanhmodsdep/Open-Source-External-Script-Executor/blob/main/Xeno/include/client.lua#L638
-
     -- 11/18/2025 11:10 PM 4zzi
 
     local HttpService = game:GetService("HttpService")
