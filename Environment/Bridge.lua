@@ -4230,7 +4230,7 @@
             end
         end
 
-        local decomp = FunctionDecomp(_debug.info(f, "f"))
+        local decomp = decompile(debug.info(f, "f"))
         local constants = decomp[2]  -- constant table
 
         return constants[index]
@@ -4246,7 +4246,7 @@
             end
         end
 
-        local decomp = decompile(_debug.info(f, "f"))
+        local decomp = decompile(debug.info(f, "f"))
         return decomp[2]  -- the entire constant array
     end
 
@@ -4262,7 +4262,7 @@
             end
         end
 
-        local decomp = decompile(_debug.info(f, "f"))
+        local decomp = decompile(debug.info(f, "f"))
         local proto = decomp[3][index]
 
         if active then
@@ -4282,7 +4282,7 @@
             end
         end
 
-        local decomp = decompile(_debug.info(f, "f"))
+        local decomp = decompile(debug.info(f, "f"))
         return decomp[3]  -- array of protos
     end
 
