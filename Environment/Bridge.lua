@@ -3412,25 +3412,9 @@
         return nil
     end
 
-    function Environment.GetScriptHash(scr)
-        assert(typeof(scr) == 'Instance', 'Argument #1 to \'getscripthash\' must be an Instance, not ' .. typeof(scr))
-        assert(scr.ClassName ~= 'LocalScript' or scr.ClassName ~= 'Script', 'Argument #1 to \'getscripthash\' must be a LocalScript or Script')
-        return scr:GetHash()
-    end
-
-    function Environment.gethiddenproperty(a, b)
-        local Success, Value = pcall(function()
-            return UGCValidationService:GetPropertyValue(a, b)
-        end)
-
-        assert(Success, "Invalid argument #2 to 'gethiddenproperty', property is not a valid member of Instance")
-
-        return Value
-    end
-
     function Environment.getcustomasset(name)
         return "rbxasset://" .. name
-    end
+	end
 
     function Environment.getrenv()
         return {
