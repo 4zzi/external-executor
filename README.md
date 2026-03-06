@@ -1,6 +1,3 @@
-## Introduction
-Level 3 sploit script hijacker
-
 ## Self fix tutorial
 just paste in new offsets
 
